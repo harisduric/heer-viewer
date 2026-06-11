@@ -65,7 +65,7 @@ export function Layout({ children }: { children: ReactNode }) {
       </div>
 
       {/* Bottom Bar */}
-      <footer className="h-[32px] w-full bg-sidebar fixed bottom-0 left-0 flex items-center justify-center z-30">
+      <footer className="h-[32px] w-full bg-white fixed bottom-0 left-0 flex items-center justify-center z-30">
         <a 
           href="https://migra.tech" 
           target="_blank" 
