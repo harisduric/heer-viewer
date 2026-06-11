@@ -70,10 +70,10 @@ export function Layout({ children }: { children: ReactNode }) {
           href="https://migra.tech" 
           target="_blank" 
           rel="noopener noreferrer"
-          className="flex items-center gap-2 text-accent text-[11px] hover:opacity-80 transition-opacity"
+          className="text-[11px] hover:opacity-80 transition-opacity"
+          style={{ color: "#B8CC5A" }}
         >
-          <IconM className="text-accent" />
-          <span>Built by Migra</span>
+          Built by Migra
         </a>
       </footer>
     </div>
