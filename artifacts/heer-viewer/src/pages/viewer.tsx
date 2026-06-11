@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useAppStore } from "../store";
 import { Layout } from "../components/layout";
@@ -9,86 +9,26 @@ import {
   useGetSchemaLibrary,
   getGetCoordinatesQueryKey,
 } from "@workspace/api-client-react";
-import * as pdfjsLib from "pdfjs-dist";
-
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-  "pdfjs-dist/build/pdf.worker.mjs",
-  import.meta.url
-).toString();
+import { PdfViewer } from "../components/pdf-viewer";
 
 const SECTION_KEYS = ["BO", "SE", "KS", "DE"] as const;
 type SectionKey = (typeof SECTION_KEYS)[number];
 
-interface Coord { x: number; y: number }
-interface Crop { cropX: number; cropY: number; cropW: number; cropH: number }
-
-async function renderPdfPage(
-  pdfCanvas: HTMLCanvasElement,
-  overlayCanvas: HTMLCanvasElement,
-  pdfData: Uint8Array,
-  pageNum: number,
-  scale: number,
-  crop: Crop | null,
-  overlays: { label: string; value: string; x: number; y: number }[]
-): Promise<void> {
-  const task = pdfjsLib.getDocument({ data: pdfData });
-  const pdf = await task.promise;
-  const page = await pdf.getPage(pageNum);
-  const baseVp = page.getViewport({ scale });
-
-  let w = baseVp.width;
-  let h = baseVp.height;
-  let offsetX = 0;
-  let offsetY = 0;
-
-  if (crop) {
-    w = crop.cropW * scale;
-    h = crop.cropH * scale;
-    offsetX = -crop.cropX * scale;
-    offsetY = -crop.cropY * scale;
-  }
-
-  pdfCanvas.width = w;
-  pdfCanvas.height = h;
-  overlayCanvas.width = w;
-  overlayCanvas.height = h;
-
-  const ctx = pdfCanvas.getContext("2d")!;
-  await page.render({
-    canvasContext: ctx,
-    canvas: pdfCanvas,
-    viewport: baseVp,
-    transform: [1, 0, 0, 1, offsetX, offsetY],
-  }).promise;
-
-  const octx = overlayCanvas.getContext("2d")!;
-  octx.clearRect(0, 0, w, h);
-  octx.font = "bold 11px Inter, sans-serif";
-  octx.textBaseline = "middle";
-
-  for (const ov of overlays) {
-    const cx = ov.x * scale + (crop ? offsetX : 0);
-    const cy = ov.y * scale + (crop ? offsetY : 0);
-    const text = `${ov.label}: ${ov.value}`;
-    const tw = octx.measureText(text).width;
-    octx.fillStyle = "#FFFFFF";
-    octx.fillRect(cx - 2, cy - 7, tw + 6, 14);
-    octx.fillStyle = "#4A5568";
-    octx.fillText(text, cx, cy);
-  }
-}
+const STEP_NAMES: Record<number, string> = {
+  0: "Übersicht",
+  1: "BO",
+  2: "SE",
+  3: "KS",
+  4: "DE",
+  5: "Hebegurt",
+};
 
 export default function ViewerPage() {
   const [, setLocation] = useLocation();
   const parsedExecution = useAppStore((s) => s.parsedExecution);
   const [step, setStep] = useState(0);
   const [panelOpen, setPanelOpen] = useState(true);
-  const [pdfData, setPdfData] = useState<Uint8Array | null>(null);
-  const [loading, setLoading] = useState(false);
   const [highlightedLabel, setHighlightedLabel] = useState<string | null>(null);
-
-  const pdfCanvasRef = useRef<HTMLCanvasElement>(null);
-  const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
 
   const { data: _library } = useGetSchemaLibrary();
   const schemaName = parsedExecution?.matchedSchema ?? null;
@@ -101,82 +41,13 @@ export default function ViewerPage() {
   });
 
   const coords = coordData as Record<string, unknown> | undefined;
-
   const hasHebegurt = (parsedExecution?.anoCodes ?? []).length > 0;
   const totalSteps = hasHebegurt ? 6 : 5;
 
-  const stepNames: Record<number, string> = {
-    0: "Übersicht",
-    1: "BO",
-    2: "SE",
-    3: "KS",
-    4: "DE",
-    5: "Hebegurt",
-  };
-
+  // Reset highlight when step changes
   useEffect(() => {
-    if (!schemaName) return;
-    const pageNum = step === 0 ? 1 : step === 5 ? 3 : 2;
-    setLoading(true);
-    fetch(`/api/schema/${schemaName}/page/${pageNum}`)
-      .then((r) => r.arrayBuffer())
-      .then((ab) => {
-        setPdfData(new Uint8Array(ab));
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  }, [schemaName, step]);
-
-  useEffect(() => {
-    if (!pdfData || !pdfCanvasRef.current || !overlayCanvasRef.current) return;
-    if (!coords) return;
-
-    const pageNum = step === 0 ? 1 : step === 5 ? 3 : 2;
-    let crop: Crop | null = null;
-    let overlays: { label: string; value: string; x: number; y: number }[] = [];
-
-    if (step === 0) {
-      const p1 = (coords as Record<string, Record<string, Coord>>)["page1"] ?? {};
-      const dims = parsedExecution?.globalDimensions ?? {};
-      overlays = Object.entries(dims)
-        .map(([key, val]) => {
-          const c = p1[key];
-          return c ? { label: key, value: String(val), x: c.x, y: c.y } : null;
-        })
-        .filter((v): v is NonNullable<typeof v> => v !== null);
-    } else if (step >= 1 && step <= 4) {
-      const sKey = SECTION_KEYS[step - 1];
-      const cropMap = (coords as Record<string, Record<string, Crop>>)["page2_crops"] ?? {};
-      crop = cropMap[sKey] ?? null;
-      const p2Sections = (coords as Record<string, Record<string, Record<string, Coord>>>)["page2"] ?? {};
-      const sCoords = p2Sections[sKey] ?? {};
-      const sData = parsedExecution?.sections?.[sKey as SectionKey] ?? {};
-      overlays = Object.entries(sData as Record<string, string>)
-        .map(([label, val]) => {
-          const c = sCoords[label];
-          return c ? { label, value: val, x: c.x, y: c.y } : null;
-        })
-        .filter((v): v is NonNullable<typeof v> => v !== null);
-    } else if (step === 5) {
-      const p3 = (coords as Record<string, unknown>)["page3"] as Record<string, Record<string, Crop>> | undefined;
-      const anoCodes = parsedExecution?.anoCodes ?? [];
-      for (const ac of anoCodes) {
-        const sec = p3?.[ac.section];
-        const c = sec?.[ac.value];
-        if (c) { crop = c; break; }
-      }
-    }
-
-    renderPdfPage(
-      pdfCanvasRef.current,
-      overlayCanvasRef.current,
-      pdfData,
-      pageNum,
-      1.5,
-      crop,
-      overlays
-    ).catch(console.error);
-  }, [pdfData, step, coords, parsedExecution, highlightedLabel]);
+    setHighlightedLabel(null);
+  }, [step]);
 
   if (!parsedExecution) {
     return (
@@ -193,13 +64,77 @@ export default function ViewerPage() {
     );
   }
 
-  const currentSectionKey =
-    step >= 1 && step <= 4 ? SECTION_KEYS[step - 1] : null;
-  const currentDims: Record<string, string> = currentSectionKey
-    ? (parsedExecution.sections?.[currentSectionKey as SectionKey] as Record<string, string> ?? {})
-    : step === 0
-    ? (parsedExecution.globalDimensions as Record<string, string> ?? {})
-    : {};
+  if (!schemaName) {
+    return (
+      <Layout>
+        <div className="flex flex-col items-center justify-center h-64 gap-4">
+          <p className="text-[#718096] text-sm">
+            Keine passende Schemazeichnung gefunden.
+          </p>
+          <Button onClick={() => setLocation("/")} variant="outline">
+            Zurück zum Import
+          </Button>
+        </div>
+      </Layout>
+    );
+  }
+
+  const pdfUrl = `/api/schema/${schemaName}/pdf`;
+
+  // Determine pageNumber and crop/overlays based on step
+  let pageNumber = 1;
+  let crop: { cropX: number; cropY: number; cropW: number; cropH: number } | null = null;
+  let overlays: { x: number; y: number; label: string; value: string }[] = [];
+
+  if (step === 0) {
+    pageNumber = 1;
+    const p1 = (coords as Record<string, Record<string, { x: number; y: number }>> | undefined)?.["page1"] ?? {};
+    const dims = parsedExecution.globalDimensions as Record<string, string> ?? {};
+    overlays = Object.entries(dims)
+      .map(([key, val]) => {
+        const c = p1[key];
+        return c ? { label: key, value: String(val), x: c.x, y: c.y } : null;
+      })
+      .filter((v): v is NonNullable<typeof v> => v !== null);
+    if (highlightedLabel) {
+      overlays = overlays.filter((o) => o.label === highlightedLabel);
+    }
+  } else if (step >= 1 && step <= 4) {
+    pageNumber = 2;
+    const sKey = SECTION_KEYS[step - 1];
+    const cropMap = (coords as Record<string, Record<string, { cropX: number; cropY: number; cropW: number; cropH: number }>> | undefined)?.["page2_crops"] ?? {};
+    crop = cropMap[sKey] ?? null;
+    const p2Sections = (coords as Record<string, Record<string, Record<string, { x: number; y: number }>>> | undefined)?.["page2"] ?? {};
+    const sCoords = p2Sections[sKey] ?? {};
+    const sData = parsedExecution.sections?.[sKey as SectionKey] as Record<string, string> ?? {};
+    const allOverlays = Object.entries(sData)
+      .map(([label, val]) => {
+        const c = sCoords[label];
+        return c ? { label, value: val, x: c.x, y: c.y } : null;
+      })
+      .filter((v): v is NonNullable<typeof v> => v !== null);
+    overlays = highlightedLabel
+      ? allOverlays.filter((o) => o.label === highlightedLabel)
+      : allOverlays;
+  } else if (step === 5) {
+    pageNumber = 3;
+    const anoCodes = parsedExecution.anoCodes ?? [];
+    const p3 = (coords as Record<string, unknown> | undefined)?.["page3"] as
+      | Record<string, Record<string, { cropX: number; cropY: number; cropW: number; cropH: number }>>
+      | undefined;
+    for (const ac of anoCodes) {
+      const secMap = p3?.[ac.section as string];
+      const c = secMap?.[ac.value as string];
+      if (c) { crop = c; break; }
+    }
+  }
+
+  const currentDims: Record<string, string> =
+    step === 0
+      ? (parsedExecution.globalDimensions as Record<string, string> ?? {})
+      : step >= 1 && step <= 4
+      ? (parsedExecution.sections?.[SECTION_KEYS[step - 1] as SectionKey] as Record<string, string> ?? {})
+      : {};
 
   return (
     <Layout>
@@ -222,7 +157,7 @@ export default function ViewerPage() {
                   }`}
               >
                 {isDone && <span>✓</span>}
-                <span>{stepNames[i]}</span>
+                <span>{STEP_NAMES[i]}</span>
               </button>
             );
           })}
@@ -243,26 +178,16 @@ export default function ViewerPage() {
 
         {/* Main area */}
         <div className="flex flex-1 overflow-hidden">
-          {/* PDF Canvas */}
-          <div className="flex-1 relative overflow-auto bg-gray-100 flex items-center justify-center">
-            {loading ? (
-              <div className="flex flex-col items-center gap-2">
-                <div className="w-8 h-8 border-2 border-[#B8CC5A] border-t-transparent rounded-full animate-spin" />
-                <span className="text-sm text-[#718096]">Lade PDF...</span>
-              </div>
-            ) : !schemaName ? (
-              <div className="text-[#718096] text-sm">
-                Keine Schemazeichnung gefunden
-              </div>
-            ) : (
-              <div className="relative">
-                <canvas ref={pdfCanvasRef} className="block shadow-lg" />
-                <canvas
-                  ref={overlayCanvasRef}
-                  className="absolute top-0 left-0 pointer-events-none"
-                />
-              </div>
-            )}
+          {/* PDF Viewer — interactive (zoom/pan/pinch + double-tap reset) */}
+          <div className="flex-1 overflow-hidden">
+            <PdfViewer
+              url={pdfUrl}
+              pageNumber={pageNumber}
+              scale={1.5}
+              crop={crop}
+              overlays={overlays}
+              interactive={true}
+            />
           </div>
 
           {/* Right dimension panel */}
@@ -270,8 +195,13 @@ export default function ViewerPage() {
             <aside className="w-64 bg-white border-l border-[#E2E8F0] overflow-y-auto shrink-0">
               <div className="p-3 border-b border-[#E2E8F0]">
                 <p className="text-xs font-semibold uppercase tracking-wider text-[#718096]">
-                  {stepNames[step]}
+                  {STEP_NAMES[step]}
                 </p>
+                {step > 0 && step <= 4 && (
+                  <p className="text-[10px] text-[#A0AEC0] mt-0.5">
+                    Klicken zum Hervorheben
+                  </p>
+                )}
               </div>
               <table className="w-full text-sm">
                 <thead>
@@ -332,7 +262,7 @@ export default function ViewerPage() {
             <ChevronLeft className="w-4 h-4 mr-1" /> Zurück
           </Button>
           <span className="text-sm font-medium text-[#718096]">
-            Schritt {step + 1} / {totalSteps} — {stepNames[step]}
+            Schritt {step + 1} / {totalSteps} — {STEP_NAMES[step]}
           </span>
           <Button
             size="sm"

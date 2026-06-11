@@ -14,7 +14,7 @@ router.get("/schema-library", async (_req, res): Promise<void> => {
 });
 
 router.get(
-  "/schema/:name/page/:num",
+  "/schema/:name/pdf",
   async (req, res): Promise<void> => {
     const name = req.params["name"] as string;
 

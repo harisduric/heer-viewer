@@ -25,7 +25,7 @@ function SchemaCard({ slot }: { slot: SchemaSlot }) {
   useEffect(() => {
     if (slot.status !== "loaded" || !slot.object_path) return;
     setThumbLoading(true);
-    fetch(`/api/schema/${slot.name}/page/1`)
+    fetch(`/api/schema/${slot.name}/pdf`)
       .then((r) => r.arrayBuffer())
       .then(async (ab) => {
         const data = new Uint8Array(ab);

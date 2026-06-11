@@ -64,7 +64,7 @@ export default function KoordinatenPage() {
 
   useEffect(() => {
     if (!selectedSchema) return;
-    fetch(`/api/schema/${selectedSchema}/page/${pageNum}`)
+    fetch(`/api/schema/${selectedSchema}/pdf`)
       .then((r) => r.arrayBuffer())
       .then((ab) => setPdfData(new Uint8Array(ab)))
       .catch(console.error);
@@ -146,6 +146,22 @@ export default function KoordinatenPage() {
       const p2 = (cd["page2"] ?? {}) as Record<string, unknown>;
       p2[sec] = localCoords;
       cd["page2"] = p2;
+    } else if (selectedPage.startsWith("page3_")) {
+      const sec = selectedPage.split("_")[1];
+      const p3 = (cd["page3"] ?? {}) as Record<string, unknown>;
+      const existingSec = (p3[sec] ?? {}) as Record<string, Record<string, number>>;
+      const updatedSec: Record<string, unknown> = {};
+      for (const [k, coord] of Object.entries(localCoords)) {
+        const prev = existingSec[k];
+        updatedSec[k] = {
+          cropX: coord.x,
+          cropY: coord.y,
+          cropW: prev?.["cropW"] ?? 200,
+          cropH: prev?.["cropH"] ?? 200,
+        };
+      }
+      p3[sec] = updatedSec;
+      cd["page3"] = p3;
     }
 
     await updateCoords.mutateAsync({ name: selectedSchema, data: cd });
