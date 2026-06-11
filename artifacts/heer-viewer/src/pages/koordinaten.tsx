@@ -76,14 +76,12 @@ const PAGE_OPTIONS = [
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function defaultCrops(pdfW: number, pdfH: number): AllCrops {
-  const hw = Math.round(pdfW / 2);
-  const hh = Math.round(pdfH / 2);
+function defaultCrops(_pdfW: number, _pdfH: number): AllCrops {
   return {
-    SE: { cropX: 0,  cropY: 0,  cropW: hw,       cropH: hh        },
-    KS: { cropX: hw, cropY: 0,  cropW: pdfW - hw, cropH: hh        },
-    BO: { cropX: 0,  cropY: hh, cropW: hw,        cropH: pdfH - hh },
-    DE: { cropX: hw, cropY: hh, cropW: pdfW - hw, cropH: pdfH - hh },
+    SE: { cropX: 0,   cropY: 20,  cropW: 230, cropH: 400 },
+    KS: { cropX: 230, cropY: 20,  cropW: 160, cropH: 400 },
+    BO: { cropX: 390, cropY: 20,  cropW: 205, cropH: 400 },
+    DE: { cropX: 0,   cropY: 420, cropW: 390, cropH: 380 },
   };
 }
 
@@ -162,10 +160,10 @@ export default function KoordinatenPage() {
 
   // Crop editor state (page2)
   const [crops, setCrops] = useState<AllCrops>({
-    SE: { cropX: 0,   cropY: 0,   cropW: 297, cropH: 421 },
-    KS: { cropX: 297, cropY: 0,   cropW: 298, cropH: 421 },
-    BO: { cropX: 0,   cropY: 421, cropW: 297, cropH: 421 },
-    DE: { cropX: 297, cropY: 421, cropW: 298, cropH: 421 },
+    SE: { cropX: 0,   cropY: 20,  cropW: 230, cropH: 400 },
+    KS: { cropX: 230, cropY: 20,  cropW: 160, cropH: 400 },
+    BO: { cropX: 390, cropY: 20,  cropW: 205, cropH: 400 },
+    DE: { cropX: 0,   cropY: 420, cropW: 390, cropH: 380 },
   });
   const [activeSection, setActiveSection] = useState<SectionKey>("SE");
   const [pdfDims, setPdfDims] = useState({ w: 595, h: 842 });
@@ -437,7 +435,7 @@ export default function KoordinatenPage() {
 
   return (
     <Layout>
-      <div className="max-w-5xl mx-auto">
+      <div ref={wrapperRef} className="max-w-5xl mx-auto">
         <h1 className="text-2xl font-bold text-[#2D3748] tracking-tight mb-6">Koordinaten-Editor</h1>
 
         {/* Controls bar */}
@@ -595,7 +593,6 @@ export default function KoordinatenPage() {
         ) : (
           /* ── Canvas + overlay ── */
           <div
-            ref={wrapperRef}
             className="bg-white rounded-xl border border-[#E2E8F0] overflow-x-hidden overflow-y-auto"
             style={{ maxHeight: "80vh" }}
           >
