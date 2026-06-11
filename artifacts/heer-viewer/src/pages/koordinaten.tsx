@@ -54,7 +54,6 @@ const SECTION_META: Record<SectionKey, { border: string; bg: string; activeBg: s
   DE: { border: "#A855F7", bg: "rgba(168,85,247,0.06)", activeBg: "rgba(168,85,247,0.18)", label: "DE — Violett" },
 };
 
-const PDF_SCALE = 1.4;
 const DEFAULT_COORD: Coord = { x: 100, y: 100 };
 const LABEL_SCALE = 1.2;
 
@@ -255,9 +254,15 @@ export default function KoordinatenPage() {
   // Page 1 / Page 3 — label coords
   const [localCoords, setLocalCoords] = useState<Record<string, Coord>>({});
 
+  // Dynamic render scale (fit page 2 to container width)
+  const [renderScale, setRenderScale] = useState(1.0);
+  const renderScaleRef = useRef(1.0);
+  useEffect(() => { renderScaleRef.current = renderScale; }, [renderScale]);
+
   const [saved, setSaved] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<DragInfo | null>(null);
 
   const pageNum = selectedPage === "page1" ? 1 : selectedPage === "page2" ? 2 : 3;
@@ -281,7 +286,7 @@ export default function KoordinatenPage() {
     return () => { cancelled = true; };
   }, [selectedSchema, pageNum]);
 
-  // Render PDF onto canvas
+  // Render PDF onto canvas — fit page 2 to container width
   useEffect(() => {
     if (!pdfData || !canvasRef.current) return;
     let cancelled = false;
@@ -289,10 +294,19 @@ export default function KoordinatenPage() {
       try {
         const pdf = await pdfjsLib.getDocument({ data: pdfData }).promise;
         const page = await pdf.getPage(1);
-        // Capture natural dimensions (at scale 1.0)
+        // Natural dimensions at scale 1.0
         const vpNatural = page.getViewport({ scale: 1.0 });
         if (!cancelled) setPdfDims({ w: vpNatural.width, h: vpNatural.height });
-        const vp = page.getViewport({ scale: isPage2 ? PDF_SCALE : LABEL_SCALE });
+
+        // For page 2: fit to the wrapper's available width; for others: fixed LABEL_SCALE
+        const availW = wrapperRef.current?.clientWidth ?? 800;
+        const scale = isPage2
+          ? Math.max(0.2, availW / vpNatural.width)
+          : LABEL_SCALE;
+        if (!cancelled) setRenderScale(scale);
+        renderScaleRef.current = scale;
+
+        const vp = page.getViewport({ scale });
         const canvas = canvasRef.current!;
         canvas.width  = vp.width;
         canvas.height = vp.height;
@@ -342,7 +356,7 @@ export default function KoordinatenPage() {
     const onMove = (e: MouseEvent) => {
       if (!dragRef.current || !overlayRef.current) return;
       const rect = overlayRef.current.getBoundingClientRect();
-      const scale = isPage2 ? PDF_SCALE : LABEL_SCALE;
+      const scale = isPage2 ? renderScaleRef.current : LABEL_SCALE;
       const dxPdf = (e.clientX - rect.left - dragRef.current.startMouseX) / scale;
       const dyPdf = (e.clientY - rect.top  - dragRef.current.startMouseY) / scale;
       const { w, h } = pdfDimsRef.current;
@@ -544,10 +558,14 @@ export default function KoordinatenPage() {
           </div>
         ) : (
           /* Canvas + overlay */
-          <div className="bg-white rounded-xl border border-[#E2E8F0] overflow-hidden">
+          <div
+            ref={wrapperRef}
+            className="bg-white rounded-xl border border-[#E2E8F0] overflow-x-hidden overflow-y-auto"
+            style={{ maxHeight: "80vh" }}
+          >
             <div
               ref={overlayRef}
-              className="relative select-none overflow-auto"
+              className="relative select-none"
               style={{ cursor: isPage2 ? "default" : "crosshair" }}
               onMouseMove={!isPage2 ? handleLabelMouseMove : undefined}
               onMouseUp={!isPage2 ? handleLabelMouseUp : undefined}
@@ -563,7 +581,7 @@ export default function KoordinatenPage() {
                     sectionKey={s}
                     crop={crops[s]}
                     isActive={activeSection === s}
-                    pdfScale={PDF_SCALE}
+                    pdfScale={renderScale}
                     onActivate={setActiveSection}
                     onStartDrag={handleStartDrag}
                   />
