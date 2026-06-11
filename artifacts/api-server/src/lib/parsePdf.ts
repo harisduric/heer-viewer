@@ -37,7 +37,14 @@ export function matchSchemaName(filename: string): string | null {
 }
 
 export function parseExecutionDescription(pdfText: string): ParsedExecution {
-  const lines = pdfText
+  // pdf-parse sometimes concatenates multiple records onto one line.
+  // Insert a newline before any known section prefix followed by " - "
+  // so each record gets its own line before we split.
+  const normalized = pdfText.replace(
+    /[ \t]+(?=(IM|AM|LM|U_QUE|BO\d*|SE\d*|KS\d*|DE\d*) - )/g,
+    "\n"
+  );
+  const lines = normalized
     .split("\n")
     .map((l) => l.trim())
     .filter(Boolean);
