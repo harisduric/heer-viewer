@@ -7,9 +7,8 @@ import {
 } from "../lib/parsePdf";
 
 const require = createRequire(import.meta.url);
-// esbuild wraps CJS modules as { default: fn } in ESM context
-const _pdfParseModule = require("pdf-parse");
-const pdfParse = (_pdfParseModule.default ?? _pdfParseModule) as (
+// pdf-parse v1: module.exports = function(buffer, options) => Promise<{text}>
+const pdfParse = require("pdf-parse") as (
   buffer: Buffer,
   options?: { max?: number }
 ) => Promise<{ text: string }>;
@@ -29,7 +28,7 @@ router.post(
 
     let pdfText: string;
     try {
-      // max: 0 = no page limit (parse all pages)
+      // max: 0 = no page limit — parse all pages
       const parsed = await pdfParse(file.buffer, { max: 0 });
       pdfText = parsed.text;
     } catch (err) {
@@ -40,6 +39,11 @@ router.post(
 
     const parsedData = parseExecutionDescription(pdfText);
     const matchedSchema = matchSchemaName(file.originalname);
+
+    req.log.info(
+      { matchedSchema, filename: file.originalname },
+      "Execution PDF parsed"
+    );
 
     res.json({ ...parsedData, matchedSchema });
   }
