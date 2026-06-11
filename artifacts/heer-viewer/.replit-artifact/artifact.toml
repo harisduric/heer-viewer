@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "Heer Viewer"
+version = "1.0.0"
+id = "artifacts/heer-viewer"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 23828
+
+[services.development]
+run = "pnpm --filter @workspace/heer-viewer run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/heer-viewer", "run", "build" ]
+publicDir = "artifacts/heer-viewer/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "23828"
+BASE_PATH = "/"

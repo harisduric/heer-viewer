@@ -1,0 +1,3 @@
+- [pdfjs-dist v5 render API](pdfjs-v5-render.md) — page.render() requires explicit `canvas: HTMLCanvasElement` alongside canvasContext; omitting it causes TS2345.
+- [api-client-react barrel imports](api-client-react-imports.md) — always import types/hooks from `@workspace/api-client-react`, never from the deep src/generated path.
+- [pdf-parse in ESM server](pdf-parse-esm.md) — pdf-parse is CJS; must use createRequire(import.meta.url) to require it in the ESM api-server bundle.

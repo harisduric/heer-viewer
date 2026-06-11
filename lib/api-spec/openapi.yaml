@@ -3,13 +3,19 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Heer Viewer API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: execution
+    description: Execution description operations
+  - name: schema
+    description: Schema drawing operations
+  - name: coordinates
+    description: Coordinate operations
 paths:
   /healthz:
     get:
@@ -24,6 +30,163 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /upload-execution:
+    post:
+      operationId: uploadExecution
+      tags: [execution]
+      summary: Parse execution description PDF
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/ExecutionUpload"
+      responses:
+        "200":
+          description: Parsed execution data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ParsedExecution"
+        "400":
+          description: Parse error or no match found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /schema-library:
+    get:
+      operationId: getSchemaLibrary
+      tags: [schema]
+      summary: List all 17 schema slots
+      responses:
+        "200":
+          description: List of schema slots
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SchemaSlot"
+
+  /schema/{name}/page/{num}:
+    get:
+      operationId: getSchemaPage
+      tags: [schema]
+      summary: Stream a PDF page from object storage
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: num
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: PDF page bytes
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Schema or page not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /schema/{name}/upload:
+    post:
+      operationId: uploadSchema
+      tags: [schema]
+      summary: Upload a schema drawing PDF to a slot
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/SchemaUpload"
+      responses:
+        "200":
+          description: Updated schema slot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SchemaSlot"
+        "404":
+          description: Schema slot not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /coordinates/{name}:
+    get:
+      operationId: getCoordinates
+      tags: [coordinates]
+      summary: Get coordinate JSON for a schema slot
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Coordinates data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CoordinatesData"
+        "404":
+          description: Schema not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    put:
+      operationId: updateCoordinates
+      tags: [coordinates]
+      summary: Update coordinate JSON for a schema slot
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CoordinatesInput"
+      responses:
+        "200":
+          description: Updated coordinates
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CoordinatesData"
+        "404":
+          description: Schema not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +197,77 @@ components:
       required:
         - status
 
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+
+    SchemaSlot:
+      type: object
+      required: [name, status]
+      properties:
+        name:
+          type: string
+        object_path:
+          type: ["string", "null"]
+        uploaded_at:
+          type: ["string", "null"]
+        status:
+          type: string
+        coordinates:
+          type: ["object", "null"]
+          additionalProperties: true
+
+    AnoCode:
+      type: object
+      required: [section, optionCode, value]
+      properties:
+        section:
+          type: string
+        optionCode:
+          type: string
+        value:
+          type: string
+
+    ParsedExecution:
+      type: object
+      required: [matchedSchema, globalDimensions, sections, anoCodes]
+      properties:
+        matchedSchema:
+          type: ["string", "null"]
+        globalDimensions:
+          type: object
+          additionalProperties: true
+        sections:
+          type: object
+          additionalProperties: true
+        anoCodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/AnoCode"
+
+    ExecutionUpload:
+      type: object
+      required: [file]
+      properties:
+        file:
+          type: string
+          format: binary
+
+    SchemaUpload:
+      type: object
+      required: [file]
+      properties:
+        file:
+          type: string
+          format: binary
+
+    CoordinatesData:
+      type: object
+      additionalProperties: true
+
+    CoordinatesInput:
+      type: object
+      additionalProperties: true
