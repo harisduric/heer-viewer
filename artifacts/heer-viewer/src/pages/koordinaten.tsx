@@ -22,11 +22,27 @@ interface Coord {
   y: number;
 }
 
+interface CropValues {
+  cropX: number;
+  cropY: number;
+  cropW: number;
+  cropH: number;
+}
+
 const DEFAULT_COORD: Coord = { x: 100, y: 100 };
 const SCALE = 1.2;
 
+// Rough default crops for page 2 sections (A4 portrait at scale 1.0, fine-tune in editor)
+// Layout: SE top-left, KS top-center, BO top-right, DE bottom-left
+const DEFAULT_PAGE2_CROPS: Record<string, CropValues> = {
+  SE: { cropX: 0,   cropY: 0,   cropW: 200, cropH: 420 },
+  KS: { cropX: 200, cropY: 0,   cropW: 200, cropH: 420 },
+  BO: { cropX: 400, cropY: 0,   cropW: 195, cropH: 420 },
+  DE: { cropX: 0,   cropY: 420, cropW: 200, cropH: 422 },
+};
+
 const PAGE_OPTIONS = [
-  { value: "page1", label: "Seite 1 — Übersicht" },
+  { value: "page1",    label: "Seite 1 — Übersicht" },
   { value: "page2_BO", label: "Seite 2 — BO" },
   { value: "page2_SE", label: "Seite 2 — SE" },
   { value: "page2_KS", label: "Seite 2 — KS" },
@@ -43,6 +59,7 @@ export default function KoordinatenPage() {
   const [selectedPage, setSelectedPage] = useState("page1");
   const [pdfData, setPdfData] = useState<Uint8Array | null>(null);
   const [localCoords, setLocalCoords] = useState<Record<string, Coord>>({});
+  const [localCrop, setLocalCrop] = useState<CropValues | null>(null);
   const [saved, setSaved] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -62,8 +79,9 @@ export default function KoordinatenPage() {
   const updateCoords = useUpdateCoordinates();
 
   const pageNum = selectedPage === "page1" ? 1 : selectedPage.startsWith("page2") ? 2 : 3;
+  const isPage2 = selectedPage.startsWith("page2_");
 
-  // Fetch the PDF via generated API client when schema or page section changes
+  // Fetch the PDF when schema or page changes
   useEffect(() => {
     if (!selectedSchema) return;
     let cancelled = false;
@@ -76,6 +94,7 @@ export default function KoordinatenPage() {
     return () => { cancelled = true; };
   }, [selectedSchema, pageNum]);
 
+  // Load coords and crops from DB
   useEffect(() => {
     if (!coordData) return;
     const cd = coordData as Record<string, unknown>;
@@ -83,30 +102,36 @@ export default function KoordinatenPage() {
 
     if (selectedPage === "page1") {
       section = (cd["page1"] ?? {}) as Record<string, Coord>;
-    } else if (selectedPage.startsWith("page2_")) {
-      const sec = selectedPage.split("_")[1];
+      setLocalCrop(null);
+    } else if (isPage2) {
+      const sec = selectedPage.split("_")[1]!;
       const p2 = (cd["page2"] ?? {}) as Record<string, unknown>;
-      section = ((p2[sec] ?? {}) as Record<string, Coord>);
+      section = (p2[sec] ?? {}) as Record<string, Coord>;
+
+      // Load crop for this page2 section
+      const cropMap = (cd["page2_crops"] ?? {}) as Record<string, CropValues>;
+      setLocalCrop(cropMap[sec] ?? DEFAULT_PAGE2_CROPS[sec] ?? { cropX: 0, cropY: 0, cropW: 300, cropH: 400 });
     } else if (selectedPage.startsWith("page3_")) {
-      const sec = selectedPage.split("_")[1];
+      const sec = selectedPage.split("_")[1]!;
       const p3 = (cd["page3"] ?? {}) as Record<string, unknown>;
-      const secData = ((p3[sec] ?? {}) as Record<string, unknown>);
+      const secData = (p3[sec] ?? {}) as Record<string, unknown>;
       section = Object.fromEntries(
         Object.entries(secData).map(([k, v]) => {
           const crop = v as Record<string, number>;
           return [k, { x: crop["cropX"] ?? 100, y: crop["cropY"] ?? 100 }];
         })
       );
+      setLocalCrop(null);
     }
 
     setLocalCoords(section);
-  }, [coordData, selectedPage]);
+  }, [coordData, selectedPage, isPage2]);
 
+  // Render PDF canvas
   useEffect(() => {
     if (!pdfData || !canvasRef.current) return;
     (async () => {
       try {
-        // Server returns a single-page PDF (the extracted page), so always render page 1
         const task = pdfjsLib.getDocument({ data: pdfData });
         const pdf = await task.promise;
         const page = await pdf.getPage(1);
@@ -120,7 +145,7 @@ export default function KoordinatenPage() {
         console.error(e);
       }
     })();
-  }, [pdfData, pageNum]);
+  }, [pdfData]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent, label: string) => {
     e.preventDefault();
@@ -148,13 +173,20 @@ export default function KoordinatenPage() {
 
     if (selectedPage === "page1") {
       cd["page1"] = localCoords;
-    } else if (selectedPage.startsWith("page2_")) {
-      const sec = selectedPage.split("_")[1];
+    } else if (isPage2) {
+      const sec = selectedPage.split("_")[1]!;
       const p2 = (cd["page2"] ?? {}) as Record<string, unknown>;
       p2[sec] = localCoords;
       cd["page2"] = p2;
+
+      // Also save the crop for this section
+      if (localCrop) {
+        const cropMap = (cd["page2_crops"] ?? {}) as Record<string, unknown>;
+        cropMap[sec] = localCrop;
+        cd["page2_crops"] = cropMap;
+      }
     } else if (selectedPage.startsWith("page3_")) {
-      const sec = selectedPage.split("_")[1];
+      const sec = selectedPage.split("_")[1]!;
       const p3 = (cd["page3"] ?? {}) as Record<string, unknown>;
       const existingSec = (p3[sec] ?? {}) as Record<string, Record<string, number>>;
       const updatedSec: Record<string, unknown> = {};
@@ -172,14 +204,16 @@ export default function KoordinatenPage() {
     }
 
     await updateCoords.mutateAsync({ name: selectedSchema, data: cd });
-    queryClient.invalidateQueries({
-      queryKey: getGetCoordinatesQueryKey(selectedSchema),
-    });
+    queryClient.invalidateQueries({ queryKey: getGetCoordinatesQueryKey(selectedSchema) });
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
 
   const handleReset = () => {
+    if (isPage2) {
+      const sec = selectedPage.split("_")[1]!;
+      setLocalCrop(DEFAULT_PAGE2_CROPS[sec] ?? { cropX: 0, cropY: 0, cropW: 300, cropH: 400 });
+    }
     const reset = Object.fromEntries(
       Object.keys(localCoords).map((k) => [k, DEFAULT_COORD])
     );
@@ -197,9 +231,7 @@ export default function KoordinatenPage() {
 
         <div className="flex gap-4 mb-6 flex-wrap">
           <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-[#718096] uppercase tracking-wider">
-              Schema
-            </label>
+            <label className="text-xs font-medium text-[#718096] uppercase tracking-wider">Schema</label>
             <select
               className="border border-[#E2E8F0] rounded-lg px-3 py-2 text-sm bg-white text-[#2D3748] min-w-[220px]"
               value={selectedSchema}
@@ -209,36 +241,26 @@ export default function KoordinatenPage() {
               {library
                 .filter((s) => s.status === "loaded")
                 .map((s) => (
-                  <option key={s.name} value={s.name}>
-                    {s.name}
-                  </option>
+                  <option key={s.name} value={s.name}>{s.name}</option>
                 ))}
             </select>
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-[#718096] uppercase tracking-wider">
-              Seite / Abschnitt
-            </label>
+            <label className="text-xs font-medium text-[#718096] uppercase tracking-wider">Seite / Abschnitt</label>
             <select
               className="border border-[#E2E8F0] rounded-lg px-3 py-2 text-sm bg-white text-[#2D3748] min-w-[220px]"
               value={selectedPage}
               onChange={(e) => setSelectedPage(e.target.value)}
             >
               {PAGE_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
+                <option key={o.value} value={o.value}>{o.label}</option>
               ))}
             </select>
           </div>
 
           {selectedSchema && (
             <div className="flex items-end gap-2">
-              <Button
-                onClick={handleSave}
-                disabled={updateCoords.isPending}
-                size="sm"
-              >
+              <Button onClick={handleSave} disabled={updateCoords.isPending} size="sm">
                 {updateCoords.isPending ? (
                   <Loader2 className="w-4 h-4 animate-spin mr-1" />
                 ) : (
@@ -252,6 +274,38 @@ export default function KoordinatenPage() {
             </div>
           )}
         </div>
+
+        {/* Crop editor for page2 sections */}
+        {isPage2 && selectedSchema && localCrop && (
+          <div className="mb-4 bg-white rounded-xl border border-[#E2E8F0] p-4">
+            <p className="text-xs font-semibold uppercase tracking-wider text-[#718096] mb-3">
+              Ausschnitt (Crop) — {selectedPage.split("_")[1]} Sektion
+            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {(["cropX", "cropY", "cropW", "cropH"] as const).map((field) => (
+                <label key={field} className="flex flex-col gap-1">
+                  <span className="text-[11px] font-medium text-[#718096] uppercase">
+                    {field === "cropX" ? "X (links)" : field === "cropY" ? "Y (oben)" : field === "cropW" ? "Breite" : "Höhe"}
+                  </span>
+                  <input
+                    type="number"
+                    min={0}
+                    className="border border-[#E2E8F0] rounded px-2 py-1.5 text-sm font-mono bg-white text-[#2D3748] w-full"
+                    value={localCrop[field]}
+                    onChange={(e) =>
+                      setLocalCrop((prev) =>
+                        prev ? { ...prev, [field]: Number(e.target.value) } : prev
+                      )
+                    }
+                  />
+                </label>
+              ))}
+            </div>
+            <p className="text-[11px] text-[#A0AEC0] mt-2">
+              Koordinaten in PDF-Einheiten (Punkte bei Zoom 1.0). Der angezeigte Ausschnitt wird im Viewer skaliert.
+            </p>
+          </div>
+        )}
 
         {!selectedSchema ? (
           <div className="bg-white rounded-xl border border-[#E2E8F0] p-12 text-center text-[#718096] text-sm">
