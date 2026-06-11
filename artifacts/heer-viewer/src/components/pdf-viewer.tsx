@@ -126,16 +126,6 @@ export function PdfViewer({
           overlayContext.fillText(text, cx, cy);
         }
 
-        // TEST MARKER — red circle at canvas-space (50,50) to confirm overlay is rendering
-        overlayContext.fillStyle = "rgba(220, 38, 38, 0.85)";
-        overlayContext.beginPath();
-        overlayContext.arc(50, 50, 8, 0, Math.PI * 2);
-        overlayContext.fill();
-        overlayContext.fillStyle = "#DC2626";
-        overlayContext.font = "bold 10px sans-serif";
-        overlayContext.textBaseline = "middle";
-        overlayContext.fillText("TEST", 62, 50);
-
         if (active) setLoading(false);
       } catch (err) {
         console.error(err);
