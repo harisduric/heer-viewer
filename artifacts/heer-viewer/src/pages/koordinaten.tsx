@@ -106,9 +106,10 @@ export default function KoordinatenPage() {
     if (!pdfData || !canvasRef.current) return;
     (async () => {
       try {
+        // Server returns a single-page PDF (the extracted page), so always render page 1
         const task = pdfjsLib.getDocument({ data: pdfData });
         const pdf = await task.promise;
-        const page = await pdf.getPage(pageNum);
+        const page = await pdf.getPage(1);
         const vp = page.getViewport({ scale: SCALE });
         const canvas = canvasRef.current!;
         canvas.width = vp.width;

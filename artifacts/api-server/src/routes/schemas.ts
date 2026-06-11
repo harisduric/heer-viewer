@@ -1,5 +1,6 @@
 import { Router } from "express";
 import multer from "multer";
+import { PDFDocument } from "pdf-lib";
 import { db } from "@workspace/db";
 import { schemasTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
@@ -40,8 +41,6 @@ router.get(
       return;
     }
 
-    req.log.info({ name, pageNum }, "Streaming schema PDF page");
-
     let stream;
     try {
       stream = await streamSchemaPdf(row.object_path);
@@ -56,15 +55,50 @@ router.get(
       return;
     }
 
-    res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Cache-Control", "private, max-age=3600");
-    stream.pipe(res);
-    stream.on("error", (err) => {
-      req.log.error({ err }, "Stream error");
-      if (!res.headersSent) {
-        res.status(500).json({ error: "Stream error" });
+    // Buffer the full PDF so pdf-lib can extract the requested page
+    const chunks: Buffer[] = [];
+    try {
+      await new Promise<void>((resolve, reject) => {
+        stream!.on("data", (chunk: Buffer) => chunks.push(chunk));
+        stream!.on("end", resolve);
+        stream!.on("error", reject);
+      });
+    } catch (err) {
+      req.log.error({ err }, "Error buffering PDF stream");
+      if (!res.headersSent) res.status(500).json({ error: "Stream error" });
+      return;
+    }
+
+    const fullBytes = Buffer.concat(chunks);
+
+    let singlePageBytes: Uint8Array;
+    try {
+      const fullDoc = await PDFDocument.load(fullBytes);
+      const totalPages = fullDoc.getPageCount();
+      const zeroIdx = pageNum - 1;
+
+      if (zeroIdx >= totalPages) {
+        res
+          .status(404)
+          .json({ error: `Page ${pageNum} not found (PDF has ${totalPages} pages)` });
+        return;
       }
-    });
+
+      const newDoc = await PDFDocument.create();
+      const [copied] = await newDoc.copyPages(fullDoc, [zeroIdx]);
+      newDoc.addPage(copied);
+      singlePageBytes = await newDoc.save();
+    } catch (err) {
+      req.log.error({ err }, "Failed to extract PDF page");
+      res.status(500).json({ error: "Failed to extract page" });
+      return;
+    }
+
+    req.log.info({ name, pageNum }, "Serving extracted PDF page");
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Length", singlePageBytes.length);
+    res.setHeader("Cache-Control", "private, max-age=3600");
+    res.send(Buffer.from(singlePageBytes));
   }
 );
 
