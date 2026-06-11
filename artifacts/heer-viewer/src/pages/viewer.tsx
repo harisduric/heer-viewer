@@ -209,7 +209,7 @@ export default function ViewerPage() {
           <div className="flex-1 overflow-hidden">
             <PdfViewer
               url={pdfUrl}
-              pageNumber={1}
+              pageNumber={pdfPageNum}
               scale={1.5}
               crop={crop}
               overlays={overlays}

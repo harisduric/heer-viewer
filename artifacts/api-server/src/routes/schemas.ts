@@ -17,6 +17,12 @@ router.get(
   "/schema/:name/page/:num",
   async (req, res): Promise<void> => {
     const name = req.params["name"] as string;
+    const pageNum = parseInt(req.params["num"] as string, 10);
+
+    if (isNaN(pageNum) || pageNum < 1 || pageNum > 10) {
+      res.status(400).json({ error: "Invalid page number (must be 1–10)" });
+      return;
+    }
 
     const [row] = await db
       .select()
@@ -33,6 +39,8 @@ router.get(
       res.status(404).json({ error: "No PDF uploaded for this schema" });
       return;
     }
+
+    req.log.info({ name, pageNum }, "Streaming schema PDF page");
 
     let stream;
     try {
