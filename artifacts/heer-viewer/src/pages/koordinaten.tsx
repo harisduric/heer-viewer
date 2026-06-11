@@ -347,7 +347,8 @@ export default function KoordinatenPage() {
       const dyPdf = (e.clientY - rect.top  - dragRef.current.startMouseY) / scale;
       const { w, h } = pdfDimsRef.current;
       const newCrop = applyDrag(dragRef.current.startCrop, dragRef.current.handle, dxPdf, dyPdf, w, h);
-      setCrops((prev) => ({ ...prev, [dragRef.current!.section]: newCrop }));
+      const section = dragRef.current.section;
+      setCrops((prev) => ({ ...prev, [section]: newCrop }));
     };
     const onUp = () => { dragRef.current = null; };
     document.addEventListener("mousemove", onMove);
