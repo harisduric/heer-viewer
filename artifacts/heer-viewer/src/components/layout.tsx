@@ -71,7 +71,7 @@ export function Layout({ children }: { children: ReactNode }) {
           target="_blank" 
           rel="noopener noreferrer"
           className="text-[11px] hover:opacity-80 transition-opacity"
-          style={{ color: "#B8CC5A" }}
+          style={{ color: "#7B2FFF" }}
         >
           Built by Migra
         </a>
