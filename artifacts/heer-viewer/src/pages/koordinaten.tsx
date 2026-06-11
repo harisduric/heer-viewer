@@ -5,6 +5,7 @@ import {
   useGetCoordinates,
   useUpdateCoordinates,
   getGetCoordinatesQueryKey,
+  getSchemaPage,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { useQueryClient } from "@tanstack/react-query";
@@ -62,12 +63,17 @@ export default function KoordinatenPage() {
 
   const pageNum = selectedPage === "page1" ? 1 : selectedPage.startsWith("page2") ? 2 : 3;
 
+  // Fetch the PDF via generated API client when schema or page section changes
   useEffect(() => {
     if (!selectedSchema) return;
-    fetch(`/api/schema/${selectedSchema}/pdf`)
-      .then((r) => r.arrayBuffer())
-      .then((ab) => setPdfData(new Uint8Array(ab)))
+    let cancelled = false;
+    getSchemaPage(selectedSchema, pageNum)
+      .then(async (blob) => {
+        if (cancelled) return;
+        setPdfData(new Uint8Array(await blob.arrayBuffer()));
+      })
       .catch(console.error);
+    return () => { cancelled = true; };
   }, [selectedSchema, pageNum]);
 
   useEffect(() => {

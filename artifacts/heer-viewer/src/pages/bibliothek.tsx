@@ -4,6 +4,7 @@ import { Layout } from "../components/layout";
 import {
   useGetSchemaLibrary,
   getGetSchemaLibraryQueryKey,
+  getSchemaPage,
 } from "@workspace/api-client-react";
 import type { SchemaSlot } from "@workspace/api-client-react";
 import { Loader2, UploadCloud } from "lucide-react";
@@ -25,10 +26,9 @@ function SchemaCard({ slot }: { slot: SchemaSlot }) {
   useEffect(() => {
     if (slot.status !== "loaded" || !slot.object_path) return;
     setThumbLoading(true);
-    fetch(`/api/schema/${slot.name}/pdf`)
-      .then((r) => r.arrayBuffer())
-      .then(async (ab) => {
-        const data = new Uint8Array(ab);
+    getSchemaPage(slot.name, 1)
+      .then(async (blob) => {
+        const data = new Uint8Array(await blob.arrayBuffer());
         const pdf = await pdfjsLib.getDocument({ data }).promise;
         const page = await pdf.getPage(1);
         const vp = page.getViewport({ scale: 0.25 });
@@ -142,9 +142,7 @@ function SchemaCard({ slot }: { slot: SchemaSlot }) {
         <p className="font-semibold text-sm text-[#2D3748] break-all leading-tight">
           {slot.name}
         </p>
-        {uploadDate && (
-          <p className="text-xs text-[#718096]">{uploadDate}</p>
-        )}
+        {uploadDate && <p className="text-xs text-[#718096]">{uploadDate}</p>}
       </div>
 
       {/* Badge */}

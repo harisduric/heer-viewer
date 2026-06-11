@@ -8,6 +8,7 @@ import {
   useGetCoordinates,
   useGetSchemaLibrary,
   getGetCoordinatesQueryKey,
+  getGetSchemaPageUrl,
 } from "@workspace/api-client-react";
 import { PdfViewer } from "../components/pdf-viewer";
 
@@ -79,34 +80,51 @@ export default function ViewerPage() {
     );
   }
 
-  const pdfUrl = `/api/schema/${schemaName}/pdf`;
+  // Map step → PDF page number (1-indexed)
+  const pdfPageNum = step === 0 ? 1 : step >= 1 && step <= 4 ? 2 : 3;
+  // Use generated URL helper so the path matches the OpenAPI contract
+  const pdfUrl = getGetSchemaPageUrl(schemaName, pdfPageNum);
 
-  // Determine pageNumber and crop/overlays based on step
-  let pageNumber = 1;
+  // Compute crop + overlays for the current step
   let crop: { cropX: number; cropY: number; cropW: number; cropH: number } | null = null;
   let overlays: { x: number; y: number; label: string; value: string }[] = [];
 
   if (step === 0) {
-    pageNumber = 1;
-    const p1 = (coords as Record<string, Record<string, { x: number; y: number }>> | undefined)?.["page1"] ?? {};
-    const dims = parsedExecution.globalDimensions as Record<string, string> ?? {};
-    overlays = Object.entries(dims)
+    const p1 =
+      (coords as Record<string, Record<string, { x: number; y: number }>> | undefined)?.[
+        "page1"
+      ] ?? {};
+    const dims = (parsedExecution.globalDimensions as Record<string, string>) ?? {};
+    const allOverlays = Object.entries(dims)
       .map(([key, val]) => {
         const c = p1[key];
         return c ? { label: key, value: String(val), x: c.x, y: c.y } : null;
       })
       .filter((v): v is NonNullable<typeof v> => v !== null);
-    if (highlightedLabel) {
-      overlays = overlays.filter((o) => o.label === highlightedLabel);
-    }
+    overlays = highlightedLabel
+      ? allOverlays.filter((o) => o.label === highlightedLabel)
+      : allOverlays;
   } else if (step >= 1 && step <= 4) {
-    pageNumber = 2;
     const sKey = SECTION_KEYS[step - 1];
-    const cropMap = (coords as Record<string, Record<string, { cropX: number; cropY: number; cropW: number; cropH: number }>> | undefined)?.["page2_crops"] ?? {};
+    const cropMap =
+      (
+        coords as
+          | Record<
+              string,
+              Record<string, { cropX: number; cropY: number; cropW: number; cropH: number }>
+            >
+          | undefined
+      )?.["page2_crops"] ?? {};
     crop = cropMap[sKey] ?? null;
-    const p2Sections = (coords as Record<string, Record<string, Record<string, { x: number; y: number }>>> | undefined)?.["page2"] ?? {};
+    const p2Sections =
+      (
+        coords as
+          | Record<string, Record<string, Record<string, { x: number; y: number }>>>
+          | undefined
+      )?.["page2"] ?? {};
     const sCoords = p2Sections[sKey] ?? {};
-    const sData = parsedExecution.sections?.[sKey as SectionKey] as Record<string, string> ?? {};
+    const sData =
+      (parsedExecution.sections?.[sKey as SectionKey] as Record<string, string>) ?? {};
     const allOverlays = Object.entries(sData)
       .map(([label, val]) => {
         const c = sCoords[label];
@@ -117,23 +135,31 @@ export default function ViewerPage() {
       ? allOverlays.filter((o) => o.label === highlightedLabel)
       : allOverlays;
   } else if (step === 5) {
-    pageNumber = 3;
     const anoCodes = parsedExecution.anoCodes ?? [];
     const p3 = (coords as Record<string, unknown> | undefined)?.["page3"] as
-      | Record<string, Record<string, { cropX: number; cropY: number; cropW: number; cropH: number }>>
+      | Record<
+          string,
+          Record<string, { cropX: number; cropY: number; cropW: number; cropH: number }>
+        >
       | undefined;
     for (const ac of anoCodes) {
       const secMap = p3?.[ac.section as string];
       const c = secMap?.[ac.value as string];
-      if (c) { crop = c; break; }
+      if (c) {
+        crop = c;
+        break;
+      }
     }
   }
 
   const currentDims: Record<string, string> =
     step === 0
-      ? (parsedExecution.globalDimensions as Record<string, string> ?? {})
+      ? ((parsedExecution.globalDimensions as Record<string, string>) ?? {})
       : step >= 1 && step <= 4
-      ? (parsedExecution.sections?.[SECTION_KEYS[step - 1] as SectionKey] as Record<string, string> ?? {})
+      ? ((parsedExecution.sections?.[SECTION_KEYS[step - 1] as SectionKey] as Record<
+          string,
+          string
+        >) ?? {})
       : {};
 
   return (
@@ -149,11 +175,12 @@ export default function ViewerPage() {
                 key={i}
                 onClick={() => setStep(i)}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold shrink-0 transition-colors border
-                  ${isActive
-                    ? "bg-[#B8CC5A] text-[#2D3748] border-[#B8CC5A]"
-                    : isDone
-                    ? "bg-[#EEF3C7] text-[#4A5568] border-[#EEF3C7]"
-                    : "bg-[#F7F8F3] text-[#718096] border-[#E2E8F0]"
+                  ${
+                    isActive
+                      ? "bg-[#B8CC5A] text-[#2D3748] border-[#B8CC5A]"
+                      : isDone
+                      ? "bg-[#EEF3C7] text-[#4A5568] border-[#EEF3C7]"
+                      : "bg-[#F7F8F3] text-[#718096] border-[#E2E8F0]"
                   }`}
               >
                 {isDone && <span>✓</span>}
@@ -178,11 +205,11 @@ export default function ViewerPage() {
 
         {/* Main area */}
         <div className="flex flex-1 overflow-hidden">
-          {/* PDF Viewer — interactive (zoom/pan/pinch + double-tap reset) */}
+          {/* PdfViewer — interactive (zoom/pan/pinch + double-click reset) */}
           <div className="flex-1 overflow-hidden">
             <PdfViewer
               url={pdfUrl}
-              pageNumber={pageNumber}
+              pageNumber={1}
               scale={1.5}
               crop={crop}
               overlays={overlays}
@@ -197,7 +224,7 @@ export default function ViewerPage() {
                 <p className="text-xs font-semibold uppercase tracking-wider text-[#718096]">
                   {STEP_NAMES[step]}
                 </p>
-                {step > 0 && step <= 4 && (
+                {step >= 1 && step <= 4 && (
                   <p className="text-[10px] text-[#A0AEC0] mt-0.5">
                     Klicken zum Hervorheben
                   </p>
@@ -219,20 +246,14 @@ export default function ViewerPage() {
                     <tr
                       key={label}
                       className={`border-t border-[#E2E8F0] cursor-pointer hover:bg-[#EEF3C7] transition-colors ${
-                        highlightedLabel === label
-                          ? "bg-[#EEF3C7] font-semibold"
-                          : ""
+                        highlightedLabel === label ? "bg-[#EEF3C7] font-semibold" : ""
                       }`}
                       onClick={() =>
-                        setHighlightedLabel(
-                          label === highlightedLabel ? null : label
-                        )
+                        setHighlightedLabel(label === highlightedLabel ? null : label)
                       }
                     >
                       <td className="px-3 py-2 font-medium">{label}</td>
-                      <td className="px-3 py-2 text-right font-mono">
-                        {value}
-                      </td>
+                      <td className="px-3 py-2 text-right font-mono">{value}</td>
                     </tr>
                   ))}
                   {Object.keys(currentDims).length === 0 && (
