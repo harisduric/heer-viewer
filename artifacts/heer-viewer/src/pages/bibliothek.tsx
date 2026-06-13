@@ -7,7 +7,7 @@ import {
   getSchemaPage,
 } from "@workspace/api-client-react";
 import type { SchemaSlot } from "@workspace/api-client-react";
-import { Loader2, UploadCloud } from "lucide-react";
+import { Loader2, UploadCloud, Pencil, Check, X } from "lucide-react";
 import * as pdfjsLib from "pdfjs-dist";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -22,6 +22,11 @@ function SchemaCard({ slot }: { slot: SchemaSlot }) {
   const [thumbUrl, setThumbUrl] = useState<string | null>(null);
   const [thumbLoading, setThumbLoading] = useState(false);
   const [detectionMsg, setDetectionMsg] = useState<string | null>(null);
+  const [statusMsg, setStatusMsg] = useState<string | null>(null);
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState("");
+  const [renameError, setRenameError] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -48,6 +53,7 @@ function SchemaCard({ slot }: { slot: SchemaSlot }) {
     async (file: File) => {
       setUploading(true);
       setDetectionMsg(null);
+      setStatusMsg(null);
       try {
         const formData = new FormData();
         formData.append("file", file);
@@ -59,6 +65,7 @@ function SchemaCard({ slot }: { slot: SchemaSlot }) {
         const result = await res.json() as {
           detected_labels?: { summary: string; count: number } | null;
         };
+        setStatusMsg("Neue Version gespeichert");
         if (result.detected_labels?.summary) {
           setDetectionMsg(result.detected_labels.summary);
         }
@@ -67,12 +74,51 @@ function SchemaCard({ slot }: { slot: SchemaSlot }) {
         });
       } catch (err) {
         console.error(err);
+        setStatusMsg(null);
       } finally {
         setUploading(false);
       }
     },
     [slot.name, queryClient]
   );
+
+  const handleRename = useCallback(async () => {
+    const trimmed = renameValue.trim();
+    if (!trimmed || trimmed === slot.name) {
+      setIsRenaming(false);
+      setRenameError(null);
+      return;
+    }
+    setRenaming(true);
+    setRenameError(null);
+    try {
+      const res = await fetch(`/api/schema/${slot.name}/rename`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ newName: trimmed }),
+      });
+      if (res.status === 409) {
+        setRenameError("Name bereits vergeben");
+        return;
+      }
+      if (!res.ok) throw new Error("Rename failed");
+      setIsRenaming(false);
+      setRenameError(null);
+      setStatusMsg(`Umbenannt zu "${trimmed}"`);
+      queryClient.invalidateQueries({ queryKey: getGetSchemaLibraryQueryKey() });
+    } catch (err) {
+      console.error(err);
+      setRenameError("Fehler beim Umbenennen");
+    } finally {
+      setRenaming(false);
+    }
+  }, [renameValue, slot.name, queryClient]);
+
+  const cancelRename = useCallback(() => {
+    setIsRenaming(false);
+    setRenameValue("");
+    setRenameError(null);
+  }, []);
 
   const onDrop = useCallback(
     async (e: React.DragEvent) => {
@@ -98,7 +144,8 @@ function SchemaCard({ slot }: { slot: SchemaSlot }) {
 
   return (
     <div
-      className={`bg-white rounded-xl border p-4 flex flex-col gap-3 cursor-pointer transition-all
+      className={`bg-white rounded-xl border p-4 flex flex-col gap-3 transition-all
+        ${isRenaming ? "cursor-default" : "cursor-pointer"}
         ${
           dragOver
             ? "border-[#B8CC5A] shadow-[0_4px_16px_rgba(184,204,90,0.3)]"
@@ -110,7 +157,7 @@ function SchemaCard({ slot }: { slot: SchemaSlot }) {
       }}
       onDragLeave={() => setDragOver(false)}
       onDrop={onDrop}
-      onClick={() => !uploading && inputRef.current?.click()}
+      onClick={() => !uploading && !isRenaming && inputRef.current?.click()}
     >
       <input
         ref={inputRef}
@@ -147,13 +194,89 @@ function SchemaCard({ slot }: { slot: SchemaSlot }) {
 
       {/* Info */}
       <div className="flex flex-col gap-1">
-        <p className="font-semibold text-sm text-[#2D3748] break-all leading-tight">
-          {slot.name}
-        </p>
-        {uploadDate && <p className="text-xs text-[#718096]">{uploadDate}</p>}
+        {isRenaming ? (
+          /* ── Rename mode ── */
+          <div
+            className="flex flex-col gap-1"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-1">
+              <input
+                autoFocus
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleRename();
+                  if (e.key === "Escape") cancelRename();
+                }}
+                className="flex-1 min-w-0 text-xs border border-[#CBD5E0] rounded px-2 py-1 outline-none focus:border-[#B8CC5A] focus:ring-1 focus:ring-[#B8CC5A]/40"
+                placeholder="Neuer Name…"
+              />
+              <button
+                onClick={handleRename}
+                disabled={renaming}
+                className="p-1 rounded text-[#276749] hover:bg-[#C6F6D5] transition-colors disabled:opacity-50"
+                title="Bestätigen"
+              >
+                {renaming ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Check className="w-3.5 h-3.5" />
+                )}
+              </button>
+              <button
+                onClick={cancelRename}
+                disabled={renaming}
+                className="p-1 rounded text-[#E53E3E] hover:bg-[#FFF5F5] transition-colors disabled:opacity-50"
+                title="Abbrechen"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            {renameError && (
+              <p className="text-[10px] text-[#E53E3E]">{renameError}</p>
+            )}
+          </div>
+        ) : (
+          /* ── Normal mode ── */
+          <>
+            <p className="font-semibold text-sm text-[#2D3748] break-all leading-tight">
+              {slot.name}
+            </p>
+            {uploadDate && (
+              <p className="text-xs text-[#718096]">{uploadDate}</p>
+            )}
+
+            {/* Action buttons */}
+            <div
+              className="flex gap-1.5 mt-1 flex-wrap"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                disabled={uploading}
+                onClick={() => !uploading && inputRef.current?.click()}
+                className="flex items-center gap-1 text-[10px] text-[#718096] border border-[#E2E8F0] rounded px-1.5 py-0.5 hover:border-[#CBD5E0] hover:text-[#4A5568] hover:bg-[#F7FAFC] transition-colors disabled:opacity-40"
+              >
+                <UploadCloud className="w-3 h-3 shrink-0" />
+                Neu hochladen
+              </button>
+              <button
+                onClick={() => {
+                  setIsRenaming(true);
+                  setRenameValue(slot.name);
+                  setStatusMsg(null);
+                }}
+                className="flex items-center gap-1 text-[10px] text-[#718096] border border-[#E2E8F0] rounded px-1.5 py-0.5 hover:border-[#CBD5E0] hover:text-[#4A5568] hover:bg-[#F7FAFC] transition-colors"
+              >
+                <Pencil className="w-3 h-3 shrink-0" />
+                Umbenennen
+              </button>
+            </div>
+          </>
+        )}
       </div>
 
-      {/* Badge */}
+      {/* Badge + messages */}
       <div className="mt-auto flex flex-col gap-2">
         <span
           className={`inline-block text-[11px] font-medium px-2 py-0.5 rounded w-fit
@@ -165,6 +288,12 @@ function SchemaCard({ slot }: { slot: SchemaSlot }) {
         >
           {slot.status === "loaded" ? "Geladen" : "Fehlend"}
         </span>
+
+        {statusMsg && (
+          <div className="text-[10px] leading-snug bg-[#F0FFF4] text-[#276749] rounded px-2 py-1.5 border border-[#C6F6D5]">
+            {statusMsg}
+          </div>
+        )}
 
         {detectionMsg && (
           <div className="text-[10px] leading-snug bg-[#EBF8FF] text-[#2B6CB0] rounded px-2 py-1.5 border border-[#BEE3F8]">

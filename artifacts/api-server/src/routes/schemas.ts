@@ -177,4 +177,59 @@ router.post(
   }
 );
 
+router.patch(
+  "/schema/:name/rename",
+  async (req, res): Promise<void> => {
+    const oldName = req.params["name"] as string;
+    const body = req.body as { newName?: unknown };
+    const newName =
+      typeof body.newName === "string" ? body.newName.trim() : "";
+
+    if (!newName) {
+      res.status(400).json({ error: "newName is required" });
+      return;
+    }
+    if (newName.length > 120) {
+      res.status(400).json({ error: "newName too long (max 120 chars)" });
+      return;
+    }
+
+    const [existing] = await db
+      .select()
+      .from(schemasTable)
+      .where(eq(schemasTable.name, oldName))
+      .limit(1);
+
+    if (!existing) {
+      res.status(404).json({ error: "Schema slot not found" });
+      return;
+    }
+
+    if (newName === oldName) {
+      res.json(existing);
+      return;
+    }
+
+    const [conflict] = await db
+      .select()
+      .from(schemasTable)
+      .where(eq(schemasTable.name, newName))
+      .limit(1);
+
+    if (conflict) {
+      res.status(409).json({ error: "Name already in use" });
+      return;
+    }
+
+    const [updated] = await db
+      .update(schemasTable)
+      .set({ name: newName })
+      .where(eq(schemasTable.name, oldName))
+      .returning();
+
+    req.log.info({ oldName, newName }, "Schema slot renamed");
+    res.json(updated);
+  }
+);
+
 export default router;
