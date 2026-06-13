@@ -67,14 +67,14 @@ export function Layout({ children }: { children: ReactNode }) {
       {/* Bottom Bar */}
       <footer className="h-[64px] w-full bg-white fixed bottom-0 left-0 flex items-center justify-center z-30 border-t border-[#E2E8F0]">
         <div className="flex items-center gap-2">
-          <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
             <defs>
-              <linearGradient id="mg" x1="0%" y1="0%" x2="100%" y2="0%">
+              <linearGradient id="mg" x1="0%" y1="0%" x2="100%" y2="100%">
                 <stop offset="0%" stopColor="#7B2FFF"/>
                 <stop offset="100%" stopColor="#B44FFF"/>
               </linearGradient>
             </defs>
-            <path fill="url(#mg)" d="M2,20 L2,6 L8,14 L12,8 L16,14 L22,6 L22,20 L19,20 L19,11 L16,15 L12,11 L8,15 L5,11 L5,20 Z"/>
+            <path fill="url(#mg)" d="M2 18V6l4 0 6 8 6-8 4 0v12h-3V11l-5 7h-4l-5-7v7H2z"/>
           </svg>
           <span className="text-[14px] font-semibold" style={{ color: "#7B2FFF" }}>
             Built by{" "}
