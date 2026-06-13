@@ -4,7 +4,6 @@ import { Layout } from "../components/layout";
 import {
   useGetSchemaLibrary,
   getGetSchemaLibraryQueryKey,
-  getSchemaPage,
 } from "@workspace/api-client-react";
 import type { SchemaSlot } from "@workspace/api-client-react";
 import { Loader2, UploadCloud, Pencil, Check, X } from "lucide-react";
@@ -15,14 +14,16 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   import.meta.url
 ).toString();
 
+type Msg = { text: string; kind: "success" | "info" };
+
 function SchemaCard({ slot }: { slot: SchemaSlot }) {
   const queryClient = useQueryClient();
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [thumbUrl, setThumbUrl] = useState<string | null>(null);
   const [thumbLoading, setThumbLoading] = useState(false);
-  const [detectionMsg, setDetectionMsg] = useState<string | null>(null);
-  const [statusMsg, setStatusMsg] = useState<string | null>(null);
+  const [thumbVersion, setThumbVersion] = useState(0);
+  const [messages, setMessages] = useState<Msg[]>([]);
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState("");
   const [renameError, setRenameError] = useState<string | null>(null);
@@ -32,8 +33,12 @@ function SchemaCard({ slot }: { slot: SchemaSlot }) {
   useEffect(() => {
     if (slot.status !== "loaded" || !slot.object_path) return;
     setThumbLoading(true);
-    getSchemaPage(slot.name, 1)
-      .then(async (blob) => {
+    // Cache-bust with thumbVersion so re-uploads always fetch fresh page data.
+    const url = `/api/schema/${encodeURIComponent(slot.name)}/page/1${thumbVersion > 0 ? `?v=${thumbVersion}` : ""}`;
+    fetch(url)
+      .then(async (r) => {
+        if (!r.ok) throw new Error("page fetch failed");
+        const blob = await r.blob();
         const data = new Uint8Array(await blob.arrayBuffer());
         const pdf = await pdfjsLib.getDocument({ data }).promise;
         const page = await pdf.getPage(1);
@@ -47,13 +52,13 @@ function SchemaCard({ slot }: { slot: SchemaSlot }) {
         setThumbLoading(false);
       })
       .catch(() => setThumbLoading(false));
-  }, [slot.name, slot.status, slot.object_path]);
+  }, [slot.name, slot.status, slot.object_path, thumbVersion]);
 
   const uploadFile = useCallback(
     async (file: File) => {
       setUploading(true);
-      setDetectionMsg(null);
-      setStatusMsg(null);
+      setMessages([]);
+      setThumbUrl(null);
       try {
         const formData = new FormData();
         formData.append("file", file);
@@ -65,16 +70,21 @@ function SchemaCard({ slot }: { slot: SchemaSlot }) {
         const result = await res.json() as {
           detected_labels?: { summary: string; count: number } | null;
         };
-        setStatusMsg("Neue Version gespeichert");
-        if (result.detected_labels?.summary) {
-          setDetectionMsg(result.detected_labels.summary);
+        const next: Msg[] = [
+          { text: "Alte Daten gelöscht", kind: "success" },
+          { text: "Neue Zeichnung gespeichert", kind: "success" },
+        ];
+        if (result.detected_labels?.count) {
+          next.push({ text: "Labels automatisch erkannt", kind: "info" });
         }
+        setMessages(next);
+        // Bump version to force thumbnail re-fetch with cache-bust.
+        setThumbVersion((v) => v + 1);
         queryClient.invalidateQueries({
           queryKey: getGetSchemaLibraryQueryKey(),
         });
-      } catch (err) {
-        console.error(err);
-        setStatusMsg(null);
+      } catch (_err) {
+        setMessages([{ text: "Fehler beim Hochladen", kind: "success" }]);
       } finally {
         setUploading(false);
       }
@@ -104,7 +114,7 @@ function SchemaCard({ slot }: { slot: SchemaSlot }) {
       if (!res.ok) throw new Error("Rename failed");
       setIsRenaming(false);
       setRenameError(null);
-      setStatusMsg(`Umbenannt zu "${trimmed}"`);
+      setMessages([{ text: `Umbenannt zu "${trimmed}"`, kind: "success" }]);
       queryClient.invalidateQueries({ queryKey: getGetSchemaLibraryQueryKey() });
     } catch (err) {
       console.error(err);
@@ -264,7 +274,7 @@ function SchemaCard({ slot }: { slot: SchemaSlot }) {
                 onClick={() => {
                   setIsRenaming(true);
                   setRenameValue(slot.name);
-                  setStatusMsg(null);
+                  setMessages([]);
                 }}
                 className="flex items-center gap-1 text-[10px] text-[#718096] border border-[#E2E8F0] rounded px-1.5 py-0.5 hover:border-[#CBD5E0] hover:text-[#4A5568] hover:bg-[#F7FAFC] transition-colors"
               >
@@ -289,18 +299,18 @@ function SchemaCard({ slot }: { slot: SchemaSlot }) {
           {slot.status === "loaded" ? "Geladen" : "Fehlend"}
         </span>
 
-        {statusMsg && (
-          <div className="text-[10px] leading-snug bg-[#F0FFF4] text-[#276749] rounded px-2 py-1.5 border border-[#C6F6D5]">
-            {statusMsg}
+        {messages.map((m, i) => (
+          <div
+            key={i}
+            className={`text-[10px] leading-snug rounded px-2 py-1.5 border font-medium
+              ${m.kind === "info"
+                ? "bg-[#EBF8FF] text-[#2B6CB0] border-[#BEE3F8]"
+                : "bg-[#F0FFF4] text-[#276749] border-[#C6F6D5]"
+              }`}
+          >
+            {m.text}
           </div>
-        )}
-
-        {detectionMsg && (
-          <div className="text-[10px] leading-snug bg-[#EBF8FF] text-[#2B6CB0] rounded px-2 py-1.5 border border-[#BEE3F8]">
-            <span className="font-semibold block mb-0.5">Labels erkannt</span>
-            {detectionMsg}
-          </div>
-        )}
+        ))}
       </div>
     </div>
   );

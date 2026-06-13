@@ -4,7 +4,7 @@ import { PDFDocument } from "pdf-lib";
 import { db } from "@workspace/db";
 import { schemasTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import { uploadSchemaPdf, streamSchemaPdf } from "../lib/gcsStorage";
+import { uploadSchemaPdf, streamSchemaPdf, deleteSchemaPdf } from "../lib/gcsStorage";
 import { detectLabelsFromPdf } from "../lib/detectLabels";
 
 const router = Router();
@@ -126,6 +126,25 @@ router.post(
       return;
     }
 
+    // ── Step 1: delete old GCS file and wipe page2 coords (clean slate) ──
+    if (row.object_path) {
+      try {
+        await deleteSchemaPdf(row.object_path);
+        req.log.info({ name, oldPath: row.object_path }, "Deleted old PDF from GCS");
+      } catch (err) {
+        req.log.warn({ err }, "Failed to delete old PDF from GCS (non-fatal)");
+      }
+    }
+
+    // Strip page2 coordinates so old detection data can never bleed through.
+    const existingCoords = (row.coordinates ?? {}) as Record<string, unknown>;
+    const { page2: _oldPage2, ...coordsWithoutPage2 } = existingCoords;
+    await db
+      .update(schemasTable)
+      .set({ coordinates: Object.keys(coordsWithoutPage2).length ? coordsWithoutPage2 : null })
+      .where(eq(schemasTable.name, name));
+
+    // ── Step 2: upload new PDF ──
     let objectPath: string;
     try {
       objectPath = await uploadSchemaPdf(name, file.buffer);
@@ -145,19 +164,13 @@ router.post(
       .where(eq(schemasTable.name, name))
       .returning();
 
-    // Auto-detect L-label positions from page 2 text content.
-    // Non-blocking: if detection fails the upload response is still returned.
+    // ── Step 3: auto-detect L-label positions from page 2 ──
     let detectedLabels: { summary: string; count: number } | null = null;
     try {
       const detection = await detectLabelsFromPdf(file.buffer);
       if (detection.count > 0) {
-        // Merge detected page2 labels into the existing coordinate map.
-        // Preserve page1, page2_crops, page3 — only overwrite page2 labels.
-        const existing = (updated.coordinates ?? {}) as Record<string, unknown>;
-        const merged = {
-          ...existing,
-          page2: detection.page2,
-        };
+        const currentCoords = (updated.coordinates ?? {}) as Record<string, unknown>;
+        const merged = { ...currentCoords, page2: detection.page2 };
         await db
           .update(schemasTable)
           .set({ coordinates: merged })
@@ -221,13 +234,30 @@ router.patch(
       return;
     }
 
+    // Delete old PDF from GCS — the renamed slot is a clean slate.
+    if (existing.object_path) {
+      try {
+        await deleteSchemaPdf(existing.object_path);
+        req.log.info({ oldName, path: existing.object_path }, "Deleted old PDF from GCS on rename");
+      } catch (err) {
+        req.log.warn({ err }, "Failed to delete old PDF from GCS during rename (non-fatal)");
+      }
+    }
+
+    // Reset everything: new name, wipe PDF ref, wipe coordinates, back to missing.
     const [updated] = await db
       .update(schemasTable)
-      .set({ name: newName })
+      .set({
+        name: newName,
+        object_path: null,
+        uploaded_at: null,
+        status: "missing",
+        coordinates: null,
+      })
       .where(eq(schemasTable.name, oldName))
       .returning();
 
-    req.log.info({ oldName, newName }, "Schema slot renamed");
+    req.log.info({ oldName, newName }, "Schema slot renamed and reset");
     res.json(updated);
   }
 );

@@ -38,6 +38,16 @@ export async function streamSchemaPdf(
   return file.createReadStream();
 }
 
+export async function deleteSchemaPdf(objectPath: string): Promise<void> {
+  const bucketId = getBucketId();
+  const bucket = objectStorageClient.bucket(bucketId);
+  const file = bucket.file(objectPath);
+  const [exists] = await file.exists();
+  if (exists) {
+    await file.delete();
+  }
+}
+
 export async function getSchemaPdfMetadata(
   objectPath: string
 ): Promise<{ size: number | null } | null> {
