@@ -21,6 +21,7 @@ function SchemaCard({ slot }: { slot: SchemaSlot }) {
   const [dragOver, setDragOver] = useState(false);
   const [thumbUrl, setThumbUrl] = useState<string | null>(null);
   const [thumbLoading, setThumbLoading] = useState(false);
+  const [detectionMsg, setDetectionMsg] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -46,6 +47,7 @@ function SchemaCard({ slot }: { slot: SchemaSlot }) {
   const uploadFile = useCallback(
     async (file: File) => {
       setUploading(true);
+      setDetectionMsg(null);
       try {
         const formData = new FormData();
         formData.append("file", file);
@@ -54,6 +56,12 @@ function SchemaCard({ slot }: { slot: SchemaSlot }) {
           body: formData,
         });
         if (!res.ok) throw new Error("Upload failed");
+        const result = await res.json() as {
+          detected_labels?: { summary: string; count: number } | null;
+        };
+        if (result.detected_labels?.summary) {
+          setDetectionMsg(result.detected_labels.summary);
+        }
         queryClient.invalidateQueries({
           queryKey: getGetSchemaLibraryQueryKey(),
         });
@@ -146,9 +154,9 @@ function SchemaCard({ slot }: { slot: SchemaSlot }) {
       </div>
 
       {/* Badge */}
-      <div className="mt-auto">
+      <div className="mt-auto flex flex-col gap-2">
         <span
-          className={`inline-block text-[11px] font-medium px-2 py-0.5 rounded
+          className={`inline-block text-[11px] font-medium px-2 py-0.5 rounded w-fit
             ${
               slot.status === "loaded"
                 ? "bg-[#C6F6D5] text-[#276749]"
@@ -157,6 +165,13 @@ function SchemaCard({ slot }: { slot: SchemaSlot }) {
         >
           {slot.status === "loaded" ? "Geladen" : "Fehlend"}
         </span>
+
+        {detectionMsg && (
+          <div className="text-[10px] leading-snug bg-[#EBF8FF] text-[#2B6CB0] rounded px-2 py-1.5 border border-[#BEE3F8]">
+            <span className="font-semibold block mb-0.5">Labels erkannt</span>
+            {detectionMsg}
+          </div>
+        )}
       </div>
     </div>
   );

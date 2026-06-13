@@ -5,6 +5,7 @@ import { db } from "@workspace/db";
 import { schemasTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { uploadSchemaPdf, streamSchemaPdf } from "../lib/gcsStorage";
+import { detectLabelsFromPdf } from "../lib/detectLabels";
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -144,7 +145,35 @@ router.post(
       .where(eq(schemasTable.name, name))
       .returning();
 
-    res.json(updated);
+    // Auto-detect L-label positions from page 2 text content.
+    // Non-blocking: if detection fails the upload response is still returned.
+    let detectedLabels: { summary: string; count: number } | null = null;
+    try {
+      const detection = await detectLabelsFromPdf(file.buffer);
+      if (detection.count > 0) {
+        // Merge detected page2 labels into the existing coordinate map.
+        // Preserve page1, page2_crops, page3 — only overwrite page2 labels.
+        const existing = (updated.coordinates ?? {}) as Record<string, unknown>;
+        const merged = {
+          ...existing,
+          page2: detection.page2,
+        };
+        await db
+          .update(schemasTable)
+          .set({ coordinates: merged })
+          .where(eq(schemasTable.name, name));
+
+        detectedLabels = { summary: detection.summary, count: detection.count };
+        req.log.info(
+          { name, count: detection.count, summary: detection.summary },
+          "Auto-detected label positions from page 2"
+        );
+      }
+    } catch (err) {
+      req.log.warn({ err }, "Label auto-detection failed (non-fatal)");
+    }
+
+    res.json({ ...updated, detected_labels: detectedLabels });
   }
 );
 
