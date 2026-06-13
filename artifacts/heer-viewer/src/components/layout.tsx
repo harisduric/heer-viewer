@@ -15,7 +15,7 @@ export function Layout({ children }: { children: ReactNode }) {
   ];
 
   return (
-    <div className="flex flex-col min-h-screen bg-background pb-8">
+    <div className="flex flex-col min-h-screen bg-background pb-16">
       {/* Header */}
       <header className="h-[56px] bg-white border-b-2 border-accent flex items-center px-4 shrink-0 z-20 relative">
         <button 
@@ -65,16 +65,30 @@ export function Layout({ children }: { children: ReactNode }) {
       </div>
 
       {/* Bottom Bar */}
-      <footer className="h-[32px] w-full bg-white fixed bottom-0 left-0 flex items-center justify-center z-30">
-        <a 
-          href="https://migra.tech" 
-          target="_blank" 
-          rel="noopener noreferrer"
-          className="text-[11px] hover:opacity-80 transition-opacity"
-          style={{ color: "#7B2FFF" }}
-        >
-          Built by Migra
-        </a>
+      <footer className="h-[64px] w-full bg-white fixed bottom-0 left-0 flex items-center justify-center z-30 border-t border-[#E2E8F0]">
+        <div className="flex items-center gap-2">
+          <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
+            <defs>
+              <linearGradient id="mg" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stopColor="#7B2FFF"/>
+                <stop offset="100%" stopColor="#B44FFF"/>
+              </linearGradient>
+            </defs>
+            <path fill="url(#mg)" d="M2,20 L2,6 L8,14 L12,8 L16,14 L22,6 L22,20 L19,20 L19,11 L16,15 L12,11 L8,15 L5,11 L5,20 Z"/>
+          </svg>
+          <span className="text-[14px] font-semibold" style={{ color: "#7B2FFF" }}>
+            Built by{" "}
+            <a
+              href="https://migra.tech"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:opacity-75 transition-opacity"
+              style={{ color: "#7B2FFF" }}
+            >
+              Migra
+            </a>
+          </span>
+        </div>
       </footer>
     </div>
   );
