@@ -5,7 +5,6 @@ import {
   useGetCoordinates,
   useUpdateCoordinates,
   getGetCoordinatesQueryKey,
-  getSchemaPage,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { useQueryClient } from "@tanstack/react-query";
@@ -175,6 +174,10 @@ export default function KoordinatenPage() {
   const labelCropRef = useRef<CropValues | null>(null);
   const [newLabelName, setNewLabelName] = useState("");
 
+  // Container width tracked via ResizeObserver (PERMANENT FIX — never use window.innerWidth)
+  const [containerWidth, setContainerWidth] = useState(800);
+  const containerWidthRef = useRef(800);
+
   // Render scale (dynamic, fit-to-width)
   const [renderScale, setRenderScale] = useState(1.0);
   const renderScaleRef = useRef(1.0);
@@ -202,16 +205,34 @@ export default function KoordinatenPage() {
   useEffect(() => { pdfDimsRef.current = pdfDims; }, [pdfDims]);
   useEffect(() => { renderScaleRef.current = renderScale; }, [renderScale]);
   useEffect(() => { labelCropRef.current = labelCrop; }, [labelCrop]);
+  useEffect(() => { containerWidthRef.current = containerWidth; }, [containerWidth]);
+
+  // PERMANENT FIX: ResizeObserver on container ref — never use window.innerWidth
+  useEffect(() => {
+    if (!wrapperRef.current) return;
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width ?? 800;
+      setContainerWidth(Math.max(200, w));
+      containerWidthRef.current = Math.max(200, w);
+    });
+    ro.observe(wrapperRef.current);
+    // Set initial value immediately
+    setContainerWidth(Math.max(200, wrapperRef.current.clientWidth));
+    containerWidthRef.current = Math.max(200, wrapperRef.current.clientWidth);
+    return () => ro.disconnect();
+  }, []);
 
   // ── Fetch PDF ──────────────────────────────────────────────────────────────
+  // PERMANENT FIX: always append ?t=Date.now() to bust browser PDF cache
 
   useEffect(() => {
     if (!selectedSchema) return;
     let cancelled = false;
-    getSchemaPage(selectedSchema, pageNum)
-      .then(async (blob) => {
-        if (cancelled) return;
-        setPdfData(new Uint8Array(await blob.arrayBuffer()));
+    fetch(`/api/schema/${encodeURIComponent(selectedSchema)}/page/${pageNum}?t=${Date.now()}`)
+      .then(async (r) => {
+        if (!r.ok || cancelled) return;
+        const blob = await r.blob();
+        if (!cancelled) setPdfData(new Uint8Array(await blob.arrayBuffer()));
       })
       .catch(console.error);
     return () => { cancelled = true; };
@@ -229,15 +250,16 @@ export default function KoordinatenPage() {
         const vpNat = page.getViewport({ scale: 1.0 });
         if (!cancelled) setPdfDims({ w: vpNat.width, h: vpNat.height });
 
-        const availW = wrapperRef.current?.clientWidth ?? 800;
+        // PERMANENT FIX: scale derived from ResizeObserver containerWidth, not window.innerWidth
+        const cw = containerWidthRef.current;
         let scale: number;
 
         if (isPage2) {
-          // Fit full page width
-          scale = Math.max(0.2, availW / vpNat.width);
+          // Fit full PDF page to container: scale = containerWidth / pdfNaturalWidth
+          scale = Math.max(0.2, cw / vpNat.width);
         } else if (isPage2Labels && labelCropRef.current) {
-          // Fit crop width — shows the section zoomed in
-          scale = Math.max(0.2, availW / labelCropRef.current.cropW);
+          // Fit crop region width to container
+          scale = Math.max(0.2, cw / labelCropRef.current.cropW);
         } else {
           scale = LABEL_SCALE;
         }
@@ -255,7 +277,7 @@ export default function KoordinatenPage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [pdfData, isPage2, isPage2Labels, labelCrop]);
+  }, [pdfData, isPage2, isPage2Labels, labelCrop, containerWidth]);
 
   // ── Load coords / crops from DB ────────────────────────────────────────────
 
