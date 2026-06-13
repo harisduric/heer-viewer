@@ -192,6 +192,7 @@ export default function KoordinatenPage() {
   // Derived mode flags
   const isPage2       = selectedPage === "page2";
   const isPage2Labels = selectedPage.startsWith("page2_labels_");
+  const isPage3       = selectedPage.startsWith("page3_");
   const labelSection  = isPage2Labels ? (selectedPage.split("_")[2] as SectionKey) : null;
   const pageNum       = selectedPage === "page1" ? 1 : (isPage2 || isPage2Labels) ? 2 : 3;
   const isLabelMode   = !isPage2; // page1, page2_labels_*, page3_* all use label-dot editing
@@ -257,8 +258,8 @@ export default function KoordinatenPage() {
         if (isPage2) {
           // Fit full PDF page to container: scale = containerWidth / pdfNaturalWidth
           scale = Math.max(0.2, cw / vpNat.width);
-        } else if (isPage2Labels && labelCropRef.current) {
-          // Fit crop region width to container
+        } else if ((isPage2Labels || isPage3) && labelCropRef.current) {
+          // Fit crop region width to container (Beschriftung + page3 section views)
           scale = Math.max(0.2, cw / labelCropRef.current.cropW);
         } else {
           scale = LABEL_SCALE;
@@ -308,18 +309,36 @@ export default function KoordinatenPage() {
       setLabelCrop(null); labelCropRef.current = null;
       setLocalCoords((cd["page1"] ?? {}) as Record<string, Coord>);
     } else if (selectedPage.startsWith("page3_")) {
-      setLabelCrop(null); labelCropRef.current = null;
       const sec = selectedPage.split("_")[1]!;
       const p3 = (cd["page3"] ?? {}) as Record<string, unknown>;
       const secData = (p3[sec] ?? {}) as Record<string, unknown>;
-      setLocalCoords(
-        Object.fromEntries(
-          Object.entries(secData).map(([k, v]) => {
-            const c = v as Record<string, number>;
-            return [k, { x: c["cropX"] ?? 100, y: c["cropY"] ?? 100 }];
-          })
-        )
+      const coordEntries = Object.fromEntries(
+        Object.entries(secData).map(([k, v]) => {
+          const c = v as Record<string, number>;
+          return [k, { x: c["cropX"] ?? 100, y: c["cropY"] ?? 100 }];
+        })
       );
+      setLocalCoords(coordEntries);
+
+      // Derive clip region from bounding box of saved label positions
+      const positions = Object.values(coordEntries);
+      if (positions.length > 0) {
+        const PAD = 40;
+        const { w, h } = pdfDimsRef.current;
+        const xs = positions.map((p) => p.x);
+        const ys = positions.map((p) => p.y);
+        const crop: CropValues = {
+          cropX: Math.max(0, Math.min(...xs) - PAD),
+          cropY: Math.max(0, Math.min(...ys) - PAD),
+          cropW: Math.min(w, Math.max(...xs) + PAD) - Math.max(0, Math.min(...xs) - PAD),
+          cropH: Math.min(h, Math.max(...ys) + PAD) - Math.max(0, Math.min(...ys) - PAD),
+        };
+        setLabelCrop(crop);
+        labelCropRef.current = crop;
+      } else {
+        setLabelCrop(null);
+        labelCropRef.current = null;
+      }
     }
   }, [coordData, selectedPage, isPage2, isPage2Labels, labelSection]);
 
@@ -451,9 +470,11 @@ export default function KoordinatenPage() {
   const schemaLoaded = library.find((s) => s.name === selectedSchema);
   const hasPdf = !!schemaLoaded?.object_path;
 
+  const labelViewW = labelCrop ? labelCrop.cropW * renderScale : undefined;
   const labelViewH = labelCrop ? labelCrop.cropH * renderScale : undefined;
   const canvasOffsetX = labelCrop ? -labelCrop.cropX * renderScale : 0;
   const canvasOffsetY = labelCrop ? -labelCrop.cropY * renderScale : 0;
+  const needsClip = (isPage2Labels || isPage3) && !!labelCrop;
 
   return (
     <Layout>
@@ -612,6 +633,11 @@ export default function KoordinatenPage() {
           <div className="flex justify-center py-20">
             <Loader2 className="w-8 h-8 animate-spin text-[#B8CC5A]" />
           </div>
+        ) : isPage2Labels && !labelCrop ? (
+          <div className="bg-white rounded-xl border border-amber-200 p-12 text-center">
+            <p className="text-amber-700 font-medium text-sm">⚠ Bitte zuerst Crop-Editor verwenden</p>
+            <p className="text-amber-600 text-xs mt-1">Definieren Sie den Crop-Bereich in „Seite 2 — Crop-Editor" und speichern Sie.</p>
+          </div>
         ) : (
           /* ── Canvas + overlay ── */
           <div
@@ -623,23 +649,31 @@ export default function KoordinatenPage() {
               className="relative select-none"
               style={{
                 cursor: isPage2 ? "default" : "crosshair",
-                // For label mode: clip to the section's crop area
-                overflow: isPage2Labels && labelCrop ? "hidden" : undefined,
-                height: isPage2Labels && labelCrop ? labelViewH : undefined,
+                // PERMANENT FIX: clip BOTH width AND height to prevent adjacent sections bleeding in
+                overflow: needsClip ? "hidden" : undefined,
+                width: needsClip ? labelViewW : undefined,
+                height: needsClip ? labelViewH : undefined,
               }}
               onMouseMove={isLabelMode ? handleLabelMouseMove : undefined}
               onMouseUp={isLabelMode ? handleLabelMouseUp : undefined}
               onMouseLeave={isLabelMode ? handleLabelMouseUp : undefined}
             >
-              {/* PDF canvas — offset in label mode to show only the crop area */}
+              {/* PDF canvas — offset in crop-clip mode to show only the section area */}
               <canvas
                 ref={canvasRef}
                 style={
-                  isPage2Labels && labelCrop
+                  needsClip
                     ? { position: "absolute", left: canvasOffsetX, top: canvasOffsetY }
                     : { display: "block" }
                 }
               />
+
+              {/* page3 with no labels yet: show full page + note */}
+              {isPage3 && !labelCrop && (
+                <div className="absolute top-2 left-2 bg-amber-100 border border-amber-300 text-amber-800 text-[11px] font-medium px-2 py-1 rounded shadow-sm">
+                  Crop noch nicht definiert — Volle Seite 3 wird angezeigt
+                </div>
+              )}
 
               {/* Page 2 crop editor: 4 colored rectangles */}
               {isPage2 &&
@@ -661,10 +695,10 @@ export default function KoordinatenPage() {
                   const crop = labelCropRef.current;
                   const left = crop
                     ? (coord.x - crop.cropX) * renderScale
-                    : coord.x * (isPage2Labels ? renderScale : LABEL_SCALE);
+                    : coord.x * renderScale;
                   const top = crop
                     ? (coord.y - crop.cropY) * renderScale
-                    : coord.y * (isPage2Labels ? renderScale : LABEL_SCALE);
+                    : coord.y * renderScale;
                   return (
                     <div
                       key={label}
