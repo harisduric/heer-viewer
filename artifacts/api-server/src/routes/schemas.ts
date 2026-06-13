@@ -190,6 +190,79 @@ router.post(
   }
 );
 
+router.post(
+  "/schema/:name/redetect",
+  async (req, res): Promise<void> => {
+    const name = req.params["name"] as string;
+
+    const [row] = await db
+      .select()
+      .from(schemasTable)
+      .where(eq(schemasTable.name, name))
+      .limit(1);
+
+    if (!row) {
+      res.status(404).json({ error: "Schema slot not found" });
+      return;
+    }
+    if (!row.object_path) {
+      res.status(404).json({ error: "No PDF uploaded for this schema" });
+      return;
+    }
+
+    let stream;
+    try {
+      stream = await streamSchemaPdf(row.object_path);
+    } catch (err) {
+      req.log.error({ err }, "Failed to stream PDF for redetect");
+      res.status(500).json({ error: "Failed to retrieve PDF" });
+      return;
+    }
+    if (!stream) {
+      res.status(404).json({ error: "PDF not found in storage" });
+      return;
+    }
+
+    const chunks: Buffer[] = [];
+    await new Promise<void>((resolve, reject) => {
+      stream!.on("data", (chunk: Buffer) => chunks.push(chunk));
+      stream!.on("end", resolve);
+      stream!.on("error", reject);
+    });
+    const pdfBytes = Buffer.concat(chunks);
+
+    const detection = await detectLabelsFromPdf(pdfBytes);
+
+    const currentCoords = (row.coordinates ?? {}) as Record<string, unknown>;
+    const merged = { ...currentCoords, page2: detection.page2 };
+    const [updated] = await db
+      .update(schemasTable)
+      .set({ coordinates: merged })
+      .where(eq(schemasTable.name, name))
+      .returning();
+
+    // Build human-readable log: "BO: L1(x,y), L2(x,y)... SE: ..."
+    const logLines: string[] = [];
+    for (const sec of ["BO", "SE", "KS", "DE"] as const) {
+      const entries = Object.entries(detection.page2[sec])
+        .sort(([a], [b]) => parseInt(a.slice(1)) - parseInt(b.slice(1)))
+        .map(([lbl, pt]) => `${lbl}(${pt.x},${pt.y})`);
+      if (entries.length) logLines.push(`${sec}: ${entries.join(", ")}`);
+    }
+    const detailLog = logLines.join(" · ");
+
+    req.log.info({ name, count: detection.count, detailLog }, "Re-detected label positions");
+    res.json({
+      name,
+      count: detection.count,
+      summary: detection.summary,
+      detail: detailLog,
+      page2: detection.page2,
+      coordinates: updated.coordinates,
+    });
+  }
+);
+
 router.patch(
   "/schema/:name/rename",
   async (req, res): Promise<void> => {

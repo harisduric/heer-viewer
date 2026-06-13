@@ -71,13 +71,23 @@ export async function detectLabelsFromPdf(pdfBytes: Buffer): Promise<DetectionRe
         if (page.pageNumber !== 2) return "";
 
         const vp = page.getViewport({ scale: 1.0 });
-        pageH = vp.height;
+        // vp.height may be undefined in some pdf-parse pdfjs builds — guard it
+        if (Number.isFinite(vp.height)) pageH = vp.height;
 
         const content = await page.getTextContent();
         for (const item of content.items) {
           const s = item.str?.trim();
           if (!s) continue;
           const t = item.transform;
+          // Guard: TextMarkedContent items have no transform; some PDFs produce
+          // partial arrays or NaN values (typeof NaN === "number"!).
+          // Number.isFinite rejects both non-numbers AND NaN/Infinity.
+          if (
+            !Array.isArray(t) ||
+            t.length < 6 ||
+            !Number.isFinite(t[4]) ||
+            !Number.isFinite(t[5])
+          ) continue;
           // t[4] = x in PDF space (left→right, same as screen)
           // t[5] = y in PDF space (bottom→top); flip to screen coords (top→down)
           rawItems.push({

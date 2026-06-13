@@ -1,0 +1,113 @@
+Please do the following in this exact order:
+
+STEP 1 — Update spec.md and create FIXES.md:
+
+Add this section to spec.md under a new heading 
+"CORRECT APP WORKFLOW":
+
+The app has exactly 4 components:
+
+1. BIBLIOTHEK: Admin uploads 17 schema drawing PDFs 
+   once. Done.
+
+2. KOORDINATEN: Admin uses Crop-Editor once per schema 
+   to define which region of page 2 belongs to 
+   BO / SE / KS / DE. The crop rectangles are saved 
+   to the database. This is the ONLY thing the 
+   Koordinaten editor does. There are NO label 
+   positioning views needed — labels are found 
+   automatically (see auto-detection below).
+
+3. IMPORT: Daily use. Staff uploads an 
+   Ausführungsbeschreibung PDF. App matches it to 
+   a schema. App parses all dimension values 
+   (BO-L01, SE-L01 etc). Viewer opens automatically.
+
+4. VIEWER: Shows the schema drawing with dimension 
+   values overlaid exactly where L1, L2 etc. appear 
+   on the drawing. Staff reads values directly from 
+   the drawing. Workflow: Übersicht → BO → SE → 
+   KS → DE → Hebegurt (if ANO_CODE active).
+
+Create a new file called FIXES.md with this content:
+
+# PERMANENT TECHNICAL DECISIONS
+
+## 1. PDF Canvas Scaling (Koordinaten Editor)
+ALWAYS use ResizeObserver on the container div ref.
+Scale = containerDiv.clientWidth / pageWidthInPoints
+Never use window.innerWidth.
+Re-render on resize.
+
+## 2. PDF Cache Busting
+ALWAYS append ?t=Date.now() to all PDF fetch URLs.
+Reload PDF when schema selection changes.
+
+## 3. Auto Label Detection
+When a schema PDF is uploaded to Bibliothek:
+- Use pdf-parse with pagerender hook on page 2
+- Extract ALL text items with their X,Y coordinates
+- Find section headers: BO, SE, KS, DE
+- Find all labels matching /^L\d+$/ (L1-L20)
+- Assign each label to nearest section header
+- Save BOTH x AND y coordinates to database
+- This runs automatically on every upload
+- No manual label positioning needed
+
+## 4. Beschriftungs-Positionen Views
+These views (BO/SE/KS/DE Beschriftung) are REMOVED
+from the Koordinaten editor. They are not needed.
+The Koordinaten editor only has:
+- Seite 1 — Übersicht (global dimensions)
+- Seite 2 — Crop-Editor (BO/SE/KS/DE regions)
+- Seite 3 — KS/SE/DE (ANO_CODE crops)
+
+## 5. Overlay Rendering in Viewer
+Dimension values are overlaid on the PDF canvas
+at the auto-detected L1/L2 coordinates.
+Color: #4A5568, font: bold 11px Inter.
+White background rectangle behind each value.
+Coordinates are scaled by current render scale.
+
+STEP 2 — Fix auto-detection:
+Re-run the label detection for PLK_W-BO_G-MV_AL.
+The current detection saved SE labels but:
+- Y coordinates are missing (empty)
+- BO, KS, DE labels were not saved
+
+Fix the detectLabels function:
+- Y coordinate: transform matrix index 5, 
+  converted as y = pageHeight - transform[5]
+- After finding section headers (BO/SE/KS/DE),
+  assign L-labels to the NEAREST section header
+  using Euclidean distance
+- Save result as { x: number, y: number } 
+  for every label
+
+After fixing, re-run detection on 
+PLK_W-BO_G-MV_AL and log the result:
+"BO: L1(x,y), L2(x,y)... SE: L1(x,y)..."
+
+STEP 3 — Remove unused views from Koordinaten:
+Remove these dropdown options:
+- Seite 2 — BO Beschriftung
+- Seite 2 — SE Beschriftung  
+- Seite 2 — KS Beschriftung
+- Seite 2 — DE Beschriftung
+
+Keep only:
+- Seite 1 — Übersicht
+- Seite 2 — Crop-Editor
+- Seite 3 — KS
+- Seite 3 — SE
+- Seite 3 — DE
+
+STEP 4 — Test in Viewer:
+After fixing detection, import the execution 
+description PLK_W-BO_G-MV_AL and check the 
+Viewer BO step. Dimension values must appear 
+on the drawing at the correct L1, L2 positions.
+Take a screenshot and show it.
+
+Read both spec.md and FIXES.md before making 
+any changes. Follow FIXES.md rules permanently.

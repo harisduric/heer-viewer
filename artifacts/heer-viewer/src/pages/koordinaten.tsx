@@ -62,15 +62,11 @@ const HANDLE_CURSORS: Record<string, string> = {
 };
 
 const PAGE_OPTIONS = [
-  { value: "page1",          label: "Seite 1 — Übersicht" },
-  { value: "page2",          label: "Seite 2 — Crop-Editor" },
-  { value: "page2_labels_BO", label: "Seite 2 — BO Beschriftung" },
-  { value: "page2_labels_SE", label: "Seite 2 — SE Beschriftung" },
-  { value: "page2_labels_KS", label: "Seite 2 — KS Beschriftung" },
-  { value: "page2_labels_DE", label: "Seite 2 — DE Beschriftung" },
-  { value: "page3_KS",       label: "Seite 3 — KS" },
-  { value: "page3_SE",       label: "Seite 3 — SE" },
-  { value: "page3_DE",       label: "Seite 3 — DE" },
+  { value: "page1",    label: "Seite 1 — Übersicht" },
+  { value: "page2",    label: "Seite 2 — Crop-Editor" },
+  { value: "page3_KS", label: "Seite 3 — KS" },
+  { value: "page3_SE", label: "Seite 3 — SE" },
+  { value: "page3_DE", label: "Seite 3 — DE" },
 ];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
