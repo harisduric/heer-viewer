@@ -67,8 +67,8 @@ export function Layout({ children }: { children: ReactNode }) {
       {/* Bottom Bar */}
       <footer className="h-[64px] w-full bg-white fixed bottom-0 left-0 flex items-center justify-center z-30 border-t border-[#E2E8F0]">
         <div className="flex items-center gap-2">
-          <img src="/images/migra-logo.png" alt="Migra" style={{ height: "20px", width: "auto" }} />
-          <span className="text-[14px] font-semibold" style={{ color: "#7B2FFF" }}>
+          <img src="/images/migra-logo.png" alt="Migra" style={{ height: "22px", width: "auto" }} />
+          <span className="text-[12px] font-semibold" style={{ color: "#7B2FFF" }}>
             Built by{" "}
             <a
               href="https://migra.tech"
