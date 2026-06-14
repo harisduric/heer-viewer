@@ -36,6 +36,11 @@ export function PdfViewer({
   const [zoom, setZoom] = useState(scale);
   const [pan, setPan] = useState({ x: 0, y: 0 });
 
+  // Sync external scale prop into zoom (e.g. when container resizes)
+  useEffect(() => {
+    setZoom(scale);
+  }, [scale]);
+
   useGesture(
     {
       onDrag: ({ offset: [x, y] }) => {
@@ -111,38 +116,91 @@ export function PdfViewer({
           transform: [1, 0, 0, 1, offsetX, offsetY],
         }).promise;
 
-        // Server-side detection used pageH=842 as fallback (pdf-parse vp.height
-        // is undefined). pdfjs-dist v5 returns the real height. Correct the gap.
+        // Server detection used pageH=842 as fallback (pdf-parse vp.height is undefined).
+        // pdfjs-dist returns the real height. Apply correction so overlays land correctly.
         const viewport1 = page.getViewport({ scale: 1 });
         const naturalPageH = viewport1.height;
         const DETECT_PAGE_H = 842;
         const yAdjust = naturalPageH - DETECT_PAGE_H;
 
         overlayContext.clearRect(0, 0, pdfCanvas.width, pdfCanvas.height);
-        overlayContext.font = "bold 13px Inter, sans-serif";
         overlayContext.textBaseline = "middle";
 
         const PAD = 6;
-        const TEXT_H = 13;
-        const HALF_H = Math.ceil(TEXT_H / 2) + PAD; // ~13px
+        const FONT_NORMAL = 13;
+        const FONT_SMALL = 11;
 
-        for (const overlay of overlays) {
-          if (!Number.isFinite(overlay.x) || !Number.isFinite(overlay.y)) continue;
+        // ── Pre-compute canvas positions for all valid overlays ──────────────
+        const items = overlays
+          .filter((o) => Number.isFinite(o.x) && Number.isFinite(o.y))
+          .map((overlay) => {
+            const correctedY = overlay.y + yAdjust;
+            const rawCx = overlay.x * zoom + offsetX;
+            const rawCy = correctedY * zoom + offsetY;
+            return { overlay, rawCx, rawCy };
+          });
 
-          // Correct Y for the pageH discrepancy
-          const correctedY = overlay.y + yAdjust;
-          const rawCx = overlay.x * zoom + offsetX;
-          const rawCy = correctedY * zoom + offsetY;
+        // ── Cluster detection: count how many other labels are within radius ──
+        // If 2+ neighbours → use smaller font to give breathing room.
+        const CLUSTER_RADIUS = 55; // canvas pixels
+        const fontSizes = items.map((item, i) => {
+          const neighbours = items.filter(
+            (other, j) =>
+              j !== i &&
+              Math.hypot(item.rawCx - other.rawCx, item.rawCy - other.rawCy) < CLUSTER_RADIUS
+          ).length;
+          return neighbours >= 2 ? FONT_SMALL : FONT_NORMAL;
+        });
 
-          const text = overlay.value; // value only — not "L1: value"
+        // ── Draw overlays with collision detection ──────────────────────────
+        // Track bounding boxes of already-drawn overlays.
+        // Skip any new overlay that overlaps >30% with an existing one.
+        const drawnBoxes: { x: number; y: number; w: number; h: number }[] = [];
+
+        function hasCollision(box: { x: number; y: number; w: number; h: number }): boolean {
+          for (const b of drawnBoxes) {
+            const ix = Math.max(
+              0,
+              Math.min(b.x + b.w, box.x + box.w) - Math.max(b.x, box.x)
+            );
+            const iy = Math.max(
+              0,
+              Math.min(b.y + b.h, box.y + box.h) - Math.max(b.y, box.y)
+            );
+            const interArea = ix * iy;
+            const minArea = Math.min(b.w * b.h, box.w * box.h);
+            if (minArea > 0 && interArea / minArea > 0.3) return true;
+          }
+          return false;
+        }
+
+        for (let i = 0; i < items.length; i++) {
+          const { overlay, rawCx, rawCy } = items[i];
+          const fontSize = fontSizes[i];
+          const HALF_H = Math.ceil(fontSize / 2) + PAD;
+
+          overlayContext.font = `bold ${fontSize}px Inter, sans-serif`;
+          const text = overlay.value;
           const tw = overlayContext.measureText(text).width;
 
           // Clamp so text never renders outside the visible canvas
           const cx = Math.max(PAD, Math.min(rawCx, pdfCanvas.width - tw - PAD));
           const cy = Math.max(HALF_H, Math.min(rawCy, pdfCanvas.height - HALF_H));
 
+          const box = {
+            x: cx - PAD,
+            y: cy - HALF_H,
+            w: tw + PAD * 2,
+            h: fontSize + PAD * 2,
+          };
+
+          // Skip if this box overlaps >30% with any already-drawn box
+          if (hasCollision(box)) continue;
+
+          drawnBoxes.push(box);
+
           overlayContext.fillStyle = "rgba(255,255,255,0.92)";
-          overlayContext.fillRect(cx - PAD, cy - HALF_H, tw + PAD * 2, TEXT_H + PAD * 2);
+          overlayContext.fillRect(box.x, box.y, box.w, box.h);
           overlayContext.fillStyle = "#4A5568";
           overlayContext.fillText(text, cx, cy);
         }
@@ -166,7 +224,7 @@ export function PdfViewer({
   return (
     <div
       ref={containerRef}
-      className={`relative overflow-hidden w-full h-full flex items-center justify-center bg-gray-100 ${
+      className={`relative overflow-auto w-full h-full flex flex-col items-center bg-gray-100 ${
         interactive ? "cursor-grab active:cursor-grabbing touch-none" : ""
       }`}
       onDoubleClick={resetView}
@@ -177,7 +235,7 @@ export function PdfViewer({
         </div>
       )}
       {!loading && error && (
-        <div className="flex flex-col items-center gap-2 text-[#718096]">
+        <div className="flex flex-col items-center gap-2 text-[#718096] mt-16">
           <AlertCircle className="w-8 h-8 text-red-400" />
           <p className="text-sm">{error}</p>
         </div>

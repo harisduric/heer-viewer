@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { useAppStore } from "../store";
 import { Layout } from "../components/layout";
@@ -32,6 +32,19 @@ export default function ViewerPage() {
   const [step, setStep] = useState(0);
   const [panelOpen, setPanelOpen] = useState(true);
   const [highlightedLabel, setHighlightedLabel] = useState<string | null>(null);
+
+  // Measure the PDF area width so we can scale crop to fill it
+  const pdfAreaRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState(900);
+  useEffect(() => {
+    const el = pdfAreaRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      setContainerWidth(entries[0].contentRect.width);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   useGetSchemaLibrary(); // warm library data
   const schemaName = parsedExecution?.matchedSchema ?? null;
@@ -194,7 +207,7 @@ export default function ViewerPage() {
         {/* Main area */}
         <div className="flex flex-1 overflow-hidden">
           {/* PDF Viewer area */}
-          <div className="flex-1 overflow-hidden">
+          <div ref={pdfAreaRef} className="flex-1 overflow-hidden">
             {step === 5 && anoCrops.length > 1 ? (
               // Multi-ANO Hebegurt: show all crops stacked vertically with labels
               <div className="h-full overflow-auto bg-gray-100 p-4 flex flex-col gap-6 items-center">
@@ -220,10 +233,17 @@ export default function ViewerPage() {
               </div>
             ) : (
               // Single view for all other steps (and Hebegurt with only one ANO_CODE)
+              // Scale: fill container width with the crop section so details are legible.
+              // Use at least 1.5 as a floor, and re-compute whenever container resizes.
               <PdfViewer
                 url={pdfUrl}
                 pageNumber={1}
-                scale={1.5}
+                scale={(() => {
+                  const activeCrop = step === 5 && anoCrops.length === 1 ? anoCrops[0].crop : crop;
+                  return activeCrop && containerWidth > 50
+                    ? Math.max(1.5, containerWidth / activeCrop.cropW)
+                    : 1.5;
+                })()}
                 crop={step === 5 && anoCrops.length === 1 ? anoCrops[0].crop : crop}
                 overlays={overlays}
                 interactive={true}
