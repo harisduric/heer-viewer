@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "6ZbfUEEyTVNa1ulraisRD"
+uri = "file://STATUS_REPORT.md"
+type = "text"
+title = "Heer Viewer — Status Report"
