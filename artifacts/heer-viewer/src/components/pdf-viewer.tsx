@@ -122,9 +122,9 @@ export function PdfViewer({
         overlayContext.font = "bold 13px Inter, sans-serif";
         overlayContext.textBaseline = "middle";
 
-        const PAD = 4;
+        const PAD = 6;
         const TEXT_H = 13;
-        const HALF_H = Math.ceil(TEXT_H / 2) + PAD; // ~11px
+        const HALF_H = Math.ceil(TEXT_H / 2) + PAD; // ~13px
 
         for (const overlay of overlays) {
           if (!Number.isFinite(overlay.x) || !Number.isFinite(overlay.y)) continue;

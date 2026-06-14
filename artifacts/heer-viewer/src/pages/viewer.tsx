@@ -118,6 +118,9 @@ export default function ViewerPage() {
     const all = Object.entries(sData)
       .map(([label, val]) => {
         const c = sCoords[label];
+        if (!c) {
+          console.warn(`[Viewer] Label ${label} not detected for section ${sKey} — no overlay will be shown`);
+        }
         return c ? { label, value: val, x: c.x, y: c.y } : null;
       })
       .filter((v): v is NonNullable<typeof v> => v !== null);
