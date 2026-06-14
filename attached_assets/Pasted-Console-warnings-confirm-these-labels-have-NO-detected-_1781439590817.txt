@@ -1,0 +1,56 @@
+Console warnings confirm these labels have NO detected 
+coordinates (no overlay shown):
+- SE: L8, L10, L12
+- KS: L4, L5
+
+Also, despite the larger padding, some original 
+"L2", "L3", "L4" label texts are STILL visible 
+next to/overlapping the new values (visible in 
+BO, SE, DE sections).
+
+Please fix both issues:
+
+1. RE-RUN AUTO-DETECTION with improved logic:
+   The current detection finds SOME but not ALL 
+   L-labels (e.g. SE found L1-L7,L9,L11,L13-15 but 
+   missed L8,L10,L12; KS found L1-L3,L6-9 but missed 
+   L4,L5).
+   
+   Possible cause: labels with very short/rotated 
+   text (vertical dimension labels like L8, L10, L12 
+   which are often rotated 90° on technical drawings) 
+   may use a different text rendering transform.
+   
+   Update detectLabels.ts to also check for ROTATED 
+   text items (where transform indicates a 90° or 
+   -90° rotation) when searching for /^L\d+$/ matches.
+   Log how many labels were found WITH rotation vs 
+   without, for PLK_W-BO_G-MV_AL.
+
+2. FIX REMAINING OVERLAPS:
+   For labels where original "L2","L3","L4" text is 
+   still partially visible: these are likely DUPLICATE 
+   text occurrences of the same label name at slightly 
+   different positions on the drawing (e.g. "L3" 
+   appears twice for two different dimension lines).
+   
+   The detection currently only saves ONE position 
+   per label name, but the drawing may show the SAME 
+   label text multiple times for different L-numbers.
+   
+   For BO/SE specifically: check if "L3" appears 
+   multiple times on the page (once for L3 itself, 
+   and the visible leftover might actually be a 
+   DIFFERENT instance of "L3" text that wasn't 
+   covered). 
+   
+   Solution: when covering a label position, search 
+   for ALL text items matching that label's exact 
+   string within a small radius and cover all of them 
+   with the white background + value.
+
+After fixing, re-run detection for PLK_W-BO_G-MV_AL 
+and check console — confirm 0 "not detected" warnings 
+for BO/SE/KS/DE. Take zoomed screenshots of BO, SE, 
+KS sections to confirm no leftover "L2"/"L3"/"L4" 
+text is visible.

@@ -167,10 +167,15 @@ router.post(
     // ── Step 3: auto-detect L-label positions from page 2 ──
     let detectedLabels: { summary: string; count: number } | null = null;
     try {
-      const detection = await detectLabelsFromPdf(file.buffer);
+      // Pass any existing crop regions so section assignment is crop-based
+      const coordsForDetect = (updated.coordinates ?? {}) as Record<string, unknown>;
+      const existingCrops = coordsForDetect["page2_crops"] as
+        | Record<string, { cropX: number; cropY: number; cropW: number; cropH: number }>
+        | undefined;
+
+      const detection = await detectLabelsFromPdf(file.buffer, existingCrops);
       if (detection.count > 0) {
-        const currentCoords = (updated.coordinates ?? {}) as Record<string, unknown>;
-        const merged = { ...currentCoords, page2: detection.page2 };
+        const merged = { ...coordsForDetect, page2: detection.page2, page2_all: detection.page2_all };
         await db
           .update(schemasTable)
           .set({ coordinates: merged })
@@ -178,7 +183,7 @@ router.post(
 
         detectedLabels = { summary: detection.summary, count: detection.count };
         req.log.info(
-          { name, count: detection.count, summary: detection.summary },
+          { name, count: detection.count, summary: detection.summary, rotationLog: detection.rotationLog },
           "Auto-detected label positions from page 2"
         );
       }
@@ -231,10 +236,15 @@ router.post(
     });
     const pdfBytes = Buffer.concat(chunks);
 
-    const detection = await detectLabelsFromPdf(pdfBytes);
-
+    // Pass existing crop regions so assignment is crop-based (most accurate)
     const currentCoords = (row.coordinates ?? {}) as Record<string, unknown>;
-    const merged = { ...currentCoords, page2: detection.page2 };
+    const existingCrops = currentCoords["page2_crops"] as
+      | Record<string, { cropX: number; cropY: number; cropW: number; cropH: number }>
+      | undefined;
+
+    const detection = await detectLabelsFromPdf(pdfBytes, existingCrops);
+
+    const merged = { ...currentCoords, page2: detection.page2, page2_all: detection.page2_all };
     const [updated] = await db
       .update(schemasTable)
       .set({ coordinates: merged })
@@ -251,13 +261,18 @@ router.post(
     }
     const detailLog = logLines.join(" · ");
 
-    req.log.info({ name, count: detection.count, detailLog }, "Re-detected label positions");
+    req.log.info(
+      { name, count: detection.count, detailLog, rotationLog: detection.rotationLog },
+      "Re-detected label positions"
+    );
     res.json({
       name,
       count: detection.count,
       summary: detection.summary,
+      rotationLog: detection.rotationLog,
       detail: detailLog,
       page2: detection.page2,
+      page2_all: detection.page2_all,
       coordinates: updated.coordinates,
     });
   }

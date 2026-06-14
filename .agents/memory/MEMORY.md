@@ -2,3 +2,4 @@
 - [api-client-react barrel imports](api-client-react-imports.md) — always import types/hooks from `@workspace/api-client-react`, never from the deep src/generated path.
 - [pdf-parse in ESM server](pdf-parse-esm.md) — pdf-parse is CJS; must use createRequire(import.meta.url) to require it in the ESM api-server bundle.
 - [detectLabels pageH bug](detect-labels-pageh.md) — vp.height is undefined in pdf-parse's bundled pdfjs; guard with Number.isFinite or pageH stays at default 842, making y = undefined - t[5] = NaN.
+- [Label detection coordinate system](label-detection-coords.md) — crops stored in pdfjs-space (Y from top, 0–595); detection stores Y=842−PDF_y; convert before crop comparison: detY = cropY + (842 − (maxCropBottom+20)).

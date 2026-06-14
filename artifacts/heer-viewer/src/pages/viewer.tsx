@@ -112,18 +112,28 @@ export default function ViewerPage() {
       (coords as Record<string, Record<string, Record<string, { x: number; y: number }>>> | undefined)?.[
         "page2"
       ] ?? {};
+    // page2_all stores ALL occurrences per label (covers duplicate text on the drawing)
+    const p2AllSections =
+      (coords as Record<string, Record<string, Record<string, { x: number; y: number }[]>>> | undefined)?.[
+        "page2_all"
+      ] ?? {};
     const sCoords = p2Sections[sKey] ?? {};
+    const sAllCoords = p2AllSections[sKey] ?? {};
     const sData =
       (parsedExecution.sections?.[sKey as SectionKey] as Record<string, string>) ?? {};
-    const all = Object.entries(sData)
-      .map(([label, val]) => {
-        const c = sCoords[label];
-        if (!c) {
-          console.warn(`[Viewer] Label ${label} not detected for section ${sKey} — no overlay will be shown`);
-        }
-        return c ? { label, value: val, x: c.x, y: c.y } : null;
-      })
-      .filter((v): v is NonNullable<typeof v> => v !== null);
+    const all = Object.entries(sData).flatMap(([label, val]) => {
+      // Prefer all-occurrences list; fall back to single coord; warn if neither
+      const positions: { x: number; y: number }[] =
+        sAllCoords[label]?.length > 0
+          ? sAllCoords[label]
+          : sCoords[label]
+          ? [sCoords[label]]
+          : [];
+      if (positions.length === 0) {
+        console.warn(`[Viewer] Label ${label} not detected for section ${sKey} — no overlay will be shown`);
+      }
+      return positions.map((pos) => ({ label, value: val, x: pos.x, y: pos.y }));
+    });
     overlays = highlightedLabel ? all.filter((o) => o.label === highlightedLabel) : all;
   } else if (step === 5) {
     const anoCodes = parsedExecution.anoCodes ?? [];
