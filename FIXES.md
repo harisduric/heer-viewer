@@ -32,6 +32,23 @@ The Koordinaten editor only has:
 ## 5. Overlay Rendering in Viewer
 Dimension values are overlaid on the PDF canvas
 at the auto-detected L1/L2 coordinates.
-Color: #4A5568, font: bold 11px Inter.
-White background rectangle behind each value.
+Color: #4A5568, font: bold 13px Inter.
+White background rectangle behind each value (4px padding).
 Coordinates are scaled by current render scale.
+Y coordinates must be corrected for the pageH detection fallback:
+  correctedY = stored_y + (actual_page_height - 842)
+where actual_page_height comes from pdfjs-dist viewport at scale=1.
+
+## 6. WORKING STATE CONFIRMED (do not break this!)
+- Auto-detection of L1-L20 positions on page 2 works
+  correctly for PLK_W-BO_G-MV_AL
+- Execution description parsing correctly extracts
+  all BO/SE/KS/DE/global dimensions
+- Schema matching by filename substring works
+- Dimension table in right sidebar shows correct
+  values per section
+- Any future change must not break this flow.
+  Before changing detectLabels.ts, parseExecution.ts,
+  or the matching logic, re-test with
+  PLK_W-BO_G-MV_AL execution description and confirm
+  the dimension table still shows correct values.

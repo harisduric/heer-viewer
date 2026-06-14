@@ -111,17 +111,38 @@ export function PdfViewer({
           transform: [1, 0, 0, 1, offsetX, offsetY],
         }).promise;
 
+        // Server-side detection used pageH=842 as fallback (pdf-parse vp.height
+        // is undefined). pdfjs-dist v5 returns the real height. Correct the gap.
+        const viewport1 = page.getViewport({ scale: 1 });
+        const naturalPageH = viewport1.height;
+        const DETECT_PAGE_H = 842;
+        const yAdjust = naturalPageH - DETECT_PAGE_H;
+
         overlayContext.clearRect(0, 0, pdfCanvas.width, pdfCanvas.height);
-        overlayContext.font = "bold 11px Inter, sans-serif";
+        overlayContext.font = "bold 13px Inter, sans-serif";
         overlayContext.textBaseline = "middle";
 
+        const PAD = 4;
+        const TEXT_H = 13;
+        const HALF_H = Math.ceil(TEXT_H / 2) + PAD; // ~11px
+
         for (const overlay of overlays) {
-          const cx = overlay.x * zoom + offsetX;
-          const cy = overlay.y * zoom + offsetY;
-          const text = `${overlay.label}: ${overlay.value}`;
+          if (!Number.isFinite(overlay.x) || !Number.isFinite(overlay.y)) continue;
+
+          // Correct Y for the pageH discrepancy
+          const correctedY = overlay.y + yAdjust;
+          const rawCx = overlay.x * zoom + offsetX;
+          const rawCy = correctedY * zoom + offsetY;
+
+          const text = overlay.value; // value only — not "L1: value"
           const tw = overlayContext.measureText(text).width;
-          overlayContext.fillStyle = "#FFFFFF";
-          overlayContext.fillRect(cx - 2, cy - 7, tw + 6, 14);
+
+          // Clamp so text never renders outside the visible canvas
+          const cx = Math.max(PAD, Math.min(rawCx, pdfCanvas.width - tw - PAD));
+          const cy = Math.max(HALF_H, Math.min(rawCy, pdfCanvas.height - HALF_H));
+
+          overlayContext.fillStyle = "rgba(255,255,255,0.92)";
+          overlayContext.fillRect(cx - PAD, cy - HALF_H, tw + PAD * 2, TEXT_H + PAD * 2);
           overlayContext.fillStyle = "#4A5568";
           overlayContext.fillText(text, cx, cy);
         }
