@@ -1,0 +1,51 @@
+Please check FIXES.md before making any changes.
+
+CONTEXT: The current state (overlay rendering with "value next to 
+label", fit-to-page viewer scaling, and the print feature via 
+on-screen canvas capture) is now CONFIRMED WORKING and should be 
+locked in as the new baseline before further features are added.
+
+TASK:
+1. Code cleanup - remove unused/dead code left over from the earlier 
+   iterations that are no longer used:
+   - Any remaining cover-rectangle drawing logic (white box covering 
+     "Lx" labels) from the earlier rotation/textWidth approaches, if 
+     still present but unused
+   - The old off-screen portal print implementation (4 PdfViewer 
+     instances rendered at -9999px), if any remnants remain after the 
+     rewrite to the on-screen capture approach
+   - Any unused state, refs, constants, or imports related to the 
+     above
+   - Any leftover debug console.log statements added during the 
+     parsePdf.ts diagnosis (numpages/page2 raw text logging)
+   Do NOT remove: rotation field in detectLabels (still used for value 
+   positioning), textWidth/textHeight if still used for spacing, the 
+   parsePdf.ts regex fix for fused text, the fit-to-page scaling logic, 
+   or the current print implementation.
+
+2. Update FIXES.md:
+   - Consolidate all the overlay-rendering iterations (cover box, 
+     rotation cover, textWidth cover, value-next-to-label) into ONE 
+     clear "CONFIRMED WORKING" section describing only the FINAL 
+     approach (value next to label, original "Lx" stays visible, 
+     spacing based on rotation + textWidth/textHeight)
+   - Add a "CONFIRMED WORKING" section for: fit-to-page viewer scaling 
+     (min of width/height ratio), and the print feature (on-screen 
+     capture to PNG, 4 pages BO/SE/KS/DE, display:none on #root during 
+     print)
+   - Add a note that the multi-page execution description parsing fix 
+     (fused-text regex) is CONFIRMED WORKING
+   - Remove/strike out descriptions of earlier abandoned approaches 
+     (cover boxes, off-screen portal) so future sessions don't 
+     reference outdated logic
+
+VERIFICATION:
+- pnpm --filter @workspace/heer-viewer run typecheck must stay clean
+- pnpm --filter @workspace/api-server run typecheck (or build) must 
+  stay clean
+- Re-test with PLK_W-BO_G-MV_AL execution description loaded:
+  - Viewer steps Übersicht/BO/SE/KS/DE all still display correctly 
+    (no regression from cleanup)
+  - "Drucken" still produces 4 correct pages
+- Do NOT mark as done before a visual check - report that manual 
+  browser verification is needed (re-check viewer + print).

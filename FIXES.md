@@ -1,14 +1,23 @@
 # PERMANENT TECHNICAL DECISIONS
 
+All decisions below are CONFIRMED WORKING against PLK_W-BO_G-MV_AL.
+Do not change any of these without re-testing the full viewer flow.
+
+---
+
 ## 1. PDF Canvas Scaling (Koordinaten Editor)
 ALWAYS use ResizeObserver on the container div ref.
 Scale = containerDiv.clientWidth / pageWidthInPoints
 Never use window.innerWidth.
 Re-render on resize.
 
+---
+
 ## 2. PDF Cache Busting
 ALWAYS append ?t=Date.now() to all PDF fetch URLs.
 Reload PDF when schema selection changes.
+
+---
 
 ## 3. Auto Label Detection
 When a schema PDF is uploaded to Bibliothek:
@@ -22,146 +31,146 @@ When a schema PDF is uploaded to Bibliothek:
 - This runs automatically on every upload
 - No manual label positioning needed
 
-## 4. Beschriftungs-Positionen Views
-These views (BO/SE/KS/DE Beschriftung) are REMOVED
-from the Koordinaten editor. They are not needed.
-The Koordinaten editor only has:
+---
+
+## 4. Beschriftungs-Positionen Views — REMOVED
+These views (BO/SE/KS/DE Beschriftung) are removed from the
+Koordinaten editor. The editor only has:
 - Seite 1 — Übersicht (global dimensions)
 - Seite 2 — Crop-Editor (BO/SE/KS/DE regions)
 - Seite 3 — KS/SE/DE (ANO_CODE crops)
 
-## 5. Overlay Rendering in Viewer — VALUE NEXT TO LABEL (confirmed approach)
-Dimension values are drawn NEXT TO their Lx anchor on the overlay canvas.
-The original Lx text in the PDF is left completely untouched — no covering.
+---
 
-Scope: overlays are ONLY drawn for steps 1–4 (BO/SE/KS/DE).
-Step 0 (Übersicht, page 1) renders the PDF completely unmodified —
-page 1 already contains full written-out labels and overlaying values
-produces orphaned floaters. All step-0 values appear in the sidebar table only.
+## 5. Overlay Rendering — CONFIRMED WORKING
 
-Positioning rules (generic, no per-schema hardcoding):
+**Final approach: value placed NEXT TO its Lx anchor. Do not cover or replace the Lx label.**
 
-For rotation=0 (horizontal labels):
-  rawCx is the LEFT edge of the Lx string; text extends rightward.
-  vx = rawCx + textWidth*zoom + GAP (5 canvas px after right end)
+The original Lx text in the PDF is left completely untouched.
+Overlays are ONLY drawn for steps 1–4 (BO/SE/KS/DE).
+Step 0 (Übersicht) renders the PDF unmodified — page 1 already contains
+full written-out labels; all step-0 values appear in the sidebar table only.
 
-For rotation≠0 (typically 90° CCW):
-  PDF baseline advances in +y_pdf (upward in PDF space).
-  After Y-flip, text extends UPWARD in screen space from rawCy.
-  rawCy IS the bottom edge of the Lx string — no labelWidthPx offset needed.
-  vx = rawCx, vy = rawCy + GAP (5 canvas px below bottom edge)
+### Positioning rules
 
-- textWidth (PDF pts from pdfjs item.width) stored in PointCoord and
-  threaded through LabelCoord → overlay props; only used for rotation=0
-- Fallback 16 canvas px if textWidth absent (old DB entries pre-redetect)
-- Clamped so value never renders outside the canvas bounds
+**rotation=0 (horizontal labels):**
+- rawCx = left edge of the Lx glyph (canvas px)
+- vx = rawCx + textWidth*zoom + GAP (5 canvas px after right end of Lx)
+- vy = rawCy (same baseline)
 
-Style:
+**rotation≠0 (typically 90° CCW):**
+- PDF baseline advances in +y_pdf (upward); after Y-flip rawCy IS the
+  BOTTOM edge of the Lx glyph in screen space
+- vx = rawCx, vy = rawCy + GAP + HALF_H (just below the bottom edge)
+- No labelWidthPx offset needed
+
+**Y-coordinate correction (always required):**
+  correctedY = stored_y + (actual_page_height − 842)
+Detection uses DETECT_PAGE_H=842; pdfjs-dist returns the real height.
+
+### textWidth
+`textWidth` (PDF pts from pdfjs item.width) is stored in PointCoord and
+threaded through LabelCoord → overlay props.
+- rotation=0: used directly (multiply by zoom for canvas px)
+- rotation≠0: not used for positioning
+- Fallback: 16 canvas px when textWidth is absent (old DB entries)
+
+### Style
 - Font: bold 11px Inter, color #4A5568
-- Background: rgba(230,235,240,0.88) tight behind value text only (3px pad)
+- Background: rgba(230,235,240,0.88), 3px pad, tight behind value text only
 - Collision detection: if two value boxes overlap, the later one is skipped
+- Clamped so value never renders outside canvas bounds
 
-Y-coordinate correction still required:
-  correctedY = stored_y + (actual_page_height - 842)
-where actual_page_height comes from pdfjs-dist viewport at scale=1,
-because detection uses DETECT_PAGE_H=842 as fallback.
+### DO NOT use these abandoned approaches
+- ~~Cover box~~ (white rect over Lx then re-draw) — hides original label, poor UX
+- ~~Rotation cover~~ (rotated white rect) — same problem, complex math
+- ~~textWidth cover~~ (pre-computed glyph width for cover) — same
 
-## 8. Multi-page execution description PDFs — entry concatenation bug
-Root cause (confirmed via debug logging): when a page break falls in the
-middle of a record, pdf-parse fuses the end of one entry directly onto
-the start of the next with NO separator:
+---
 
-  "DE - L15 - 12DE - ANO_CODE - Z01 - 0"
+## 6. Multi-page Execution Description Parsing — CONFIRMED WORKING
 
-split(" - ") then yields rawValue = "0" (the last element from the
-fused ANO_CODE record), which the `rawValue === "0"` guard discards →
-L15 silently dropped.
+### Root cause
+When a page break falls mid-record, pdf-parse fuses entries directly:
+  `"DE - L15 - 12DE - ANO_CODE - Z01 - 0"`
+split(" - ") yields rawValue="0" → discarded → L15 silently dropped.
 
-The old normalization regex only handled [ \t]+ before a section prefix.
-It did not catch direct fusion like "12DE".
+### Fix (do not remove)
+Step 1 — normalize line terminators:
+```
+cleanText = pdfText.replace(/\r\n/g, "\n").replace(/[\r\x0c]/g, "\n")
+```
+Step 2 — insert \n before any section prefix not already at line start:
+```
+cleanText.replace(
+  /(?<=[^\n])(IM|AM|LM|U_QUE|BO\d*|SE\d*|KS\d*|DE\d*)(?= - )/g,
+  "\n$1"
+)
+```
+The lookahead `(?= - )` prevents false positives inside schema names.
+Generic — catches whitespace-fused and zero-separator concatenation across any number of pages.
 
-Fix (permanent — do not remove):
-Step 1 — normalize all line terminators before the regex runs:
-  cleanText = pdfText.replace(/\r\n/g, "\n").replace(/[\r\x0c]/g, "\n")
+---
 
-Step 2 — insert \n before any section prefix that is NOT already at
-the start of a line, using a lookbehind:
-  cleanText.replace(/(?<=[^\n])(IM|AM|LM|U_QUE|BO\d*|SE\d*|KS\d*|DE\d*)(?= - )/g, "\n$1")
+## 7. Fit-to-page Viewer Scaling — CONFIRMED WORKING
 
-This is generic — catches both whitespace-separated and zero-separator
-concatenation, across any number of pages.
-The lookahead (?= - ) prevents false positives inside schema names.
+Scale = min(containerWidth / cropW, containerHeight / cropH)
 
-## 9. Viewer crop scaling — "fit to page" (all steps)
-Scale = min(containerWidth / cropW, containerHeight / cropH).
-This fills the available area in both dimensions without overflow,
-handling both landscape (BO/SE/DE) and portrait (KS) crops correctly.
+Fills available area in both dimensions without overflow, handling both
+landscape (BO/SE/DE) and portrait (KS) crops correctly.
 
 Measured by ResizeObserver on pdfAreaRef in viewer.tsx.
-Tracked in two state vars: containerWidth and containerHeight (both updated together in the same observer callback).
-Fallback: if crop is null or either dimension < 50px → scale = 1.5.
+Both containerWidth and containerHeight updated together in the same observer callback.
+Fallback: scale = 1.5 when crop is null or either dimension < 50px.
 
-Centering: PdfViewer outer container uses flex items-center justify-center
-(both axes). At base fit-scale the canvas is ≤ container, so centering
-works cleanly. At user-zoomed scale, pan gesture handles navigation via
-transform: translate(pan.x, pan.y) — CSS centering breakdown at high
-zoom is not a problem.
+Centering: PdfViewer outer container uses `flex items-center justify-center`
+(both axes). At base fit-scale the canvas is ≤ container so centering works.
+At user-zoomed scale, pan gesture via `transform: translate(pan.x, pan.y)`
+handles navigation — CSS centering breakdown at high zoom is not a problem.
 
-## 10. Print feature — "Drucken" button (BO/SE/KS/DE, 4 pages)
+---
 
-DO NOT use off-screen PdfViewer portals (position:fixed; top:-9999px): browsers
-do not reliably paint canvas buffers that are far off-screen. Do NOT use
-`visibility:hidden` on #root: it still occupies layout space and produces phantom
-blank pages alongside the real ones.
+## 8. Print Feature ("Drucken") — CONFIRMED WORKING
 
-### Correct approach: capture on-screen canvases as PNG images, then print <img> tags
+Prints 4 pages: BO → SE → KS → DE, A4 landscape.
 
-1. CAPTURE PHASE: When "Drucken" is clicked, captureQueueRef is initialised with
-   { step: 1, images: [], originalStep: N }. isCapturing=true is set. step is
-   forced to 1 (BO). The MAIN, ON-SCREEN PdfViewer receives
-   `onRendered={handlePrintRendered}`. After each render completes, PdfViewer
-   composites pdfCanvas + overlayCanvas into a temp canvas and calls
-   onRendered(composite.toDataURL('image/png')). handlePrintRendered reads from
-   captureQueueRef (ref, never stale), advances step 1→2→3→4, and after all 4
-   images are collected calls setPrintImages([...imgs]) and restores originalStep.
+### DO NOT use these abandoned approaches
+- ~~Off-screen PdfViewer portal (position:fixed; top:-9999px)~~: browsers
+  do not reliably paint canvas buffers that are far off-screen → blank pages.
+- ~~visibility:hidden on #root~~: still occupies layout space → phantom blank
+  pages appear alongside real ones in the print preview (7 pages instead of 4).
 
-2. PRINT PHASE: A useEffect on printImages calls window.print() after React
-   commits the portal DOM (effects always run after commit). The portal contains
-   4 <img src={dataUrl}> elements (no canvas rendering, no off-screen issues).
-   `object-fit: contain` on each img handles KS portrait section on landscape page.
+### Correct approach: capture on-screen canvases, print as \<img\> tags
 
-3. CSS: `@media print { #root { display: none !important; } }` — display:none
-   takes NO layout space → zero phantom pages. Portal `#heer-print-view` is
-   `display: none` on screen and `display: block` during print.
+**Capture phase:**
+1. Click "Drucken" → captureQueueRef = { step:1, images:[], originalStep:N }
+2. isCapturing=true, step forced to 1 (BO); navigation buttons disabled
+3. Main on-screen PdfViewer receives `onRendered={handlePrintRendered}`
+4. After each render: PdfViewer composites pdfCanvas + overlayCanvas into a
+   temp canvas, calls `onRendered(composite.toDataURL('image/png'))`
+5. handlePrintRendered reads captureQueueRef (ref, never stale), pushes dataUrl,
+   advances step 1→2→3→4; after step 4 restores originalStep, sets printImages
 
-4. afterprint event clears printImages → portal unmounts.
+**Print phase:**
+6. useEffect on printImages calls `window.print()` after React commits the portal
+   (effects always fire after DOM commit → portal is already mounted)
+7. Portal at document.body contains 4 `<img src={dataUrl}>` with
+   `object-fit: contain` (handles KS portrait on landscape page)
+8. `afterprint` event → setPrintImages(null) → portal unmounts
 
-5. `@page { size: A4 landscape; margin: 8mm; }` MUST be at TOP LEVEL of <style>,
-   NOT nested inside @media print — browsers reject nested @page rules.
+**CSS:**
+```css
+@page { size: A4 landscape; margin: 8mm; }           /* TOP LEVEL — not inside @media print */
+@media screen { #heer-print-view { display: none !important; } }
+@media print {
+  #root { display: none !important; }                /* display:none → zero layout space */
+  #heer-print-view { display: block; }
+}
+```
+`@page` MUST be at top level of the `<style>` block — browsers ignore it when
+nested inside `@media print`.
 
-### Why captureQueueRef instead of state
+**Why captureQueueRef instead of state:**
 State updates are batched; reading captureStep from a useCallback closure risks
 stale values across 4 sequential renders. Mutating captureQueueRef.current
-directly is always in sync and fires handlePrintRendered reads fresh data.
-
-## 6. WORKING STATE CONFIRMED (do not break this!)
-- Auto-detection of L1-L20 positions on page 2 works
-  correctly for PLK_W-BO_G-MV_AL
-- Execution description parsing correctly extracts
-  all BO/SE/KS/DE/global dimensions
-- Schema matching by filename substring works
-- Dimension table in right sidebar shows correct
-  values per section
-- Any future change must not break this flow.
-  Before changing detectLabels.ts, parseExecution.ts,
-  or the matching logic, re-test with
-  PLK_W-BO_G-MV_AL execution description and confirm
-  the dimension table still shows correct values.
-
-## 7. CONFIRMED APPROACH: Values placed next to Lx labels
-The dimension overlay places each value TEXT next to (not replacing)
-its Lx anchor point. Original Lx labels remain visible on the PDF.
-Values appear to the right (horizontal labels) or below (rotated labels).
-Any future change to pdf-viewer.tsx overlay rendering or coordinate
-storage MUST be re-tested against PLK_W-BO_G-MV_AL before being
-considered complete.
+directly is always fresh.

@@ -11,7 +11,7 @@ const require = createRequire(import.meta.url);
 const pdfParse = require("pdf-parse") as (
   buffer: Buffer,
   options?: { max?: number }
-) => Promise<{ text: string; numpages: number }>;
+) => Promise<{ text: string }>;
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -27,34 +27,17 @@ router.post(
     }
 
     let pdfText: string;
-    let pdfNumPages = 0;
     try {
       // max: 0 = no page limit — parse all pages
       const parsed = await pdfParse(file.buffer, { max: 0 });
       pdfText = parsed.text;
-      pdfNumPages = parsed.numpages;
     } catch (err) {
       req.log.error({ err }, "Failed to parse PDF");
       res.status(400).json({ error: "Failed to parse PDF" });
       return;
     }
 
-    // DEBUG: diagnose multi-page extraction
-    req.log.info(
-      {
-        numpages: pdfNumPages,
-        textLength: pdfText.length,
-        containsL15: pdfText.includes("L15"),
-        first200: pdfText.slice(0, 200),
-        last200: pdfText.slice(-200),
-      },
-      "DEBUG pdf-parse extraction"
-    );
-
     const parsedData = parseExecutionDescription(pdfText);
-
-    // DEBUG: log the full DE section from parsed result
-    req.log.info({ deSection: parsedData.sections.DE }, "DEBUG parsed DE section");
 
     const matchedSchema = matchSchemaName(file.originalname);
 
