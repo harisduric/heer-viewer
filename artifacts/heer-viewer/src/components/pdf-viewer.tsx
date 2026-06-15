@@ -148,15 +148,17 @@ export function PdfViewer({
 
         // ── Draw value labels next to their Lx anchor ───────────────────────
         // The original Lx text on the PDF is left completely untouched.
-        // Anchor point (rawCx, rawCy) is the baseline-left of the Lx glyph.
+        // Anchor point (rawCx, rawCy) is the baseline-left corner of the Lx glyph.
         //
         // For horizontal labels (rotation=0):
-        //   - Lx advances to the right → value placed to the RIGHT of label end
-        //   - vx = rawCx + labelWidthPx + GAP
+        //   - rawCx is the LEFT edge of the string; text extends rightward.
+        //   - Value placed after the right end: vx = rawCx + labelWidthPx + GAP
         //
-        // For rotated labels (rotation≠0, typically 90° CCW):
-        //   - Lx advances downward in screen space → value placed BELOW label end
-        //   - vy = rawCy + labelWidthPx + GAP   (advance width = screen-downward extent)
+        // For rotation=90° CCW labels:
+        //   - The PDF baseline advances in +y_pdf (upward PDF space), which after
+        //     the Y-flip becomes -y_screen (upward in screen space).
+        //   - rawCy IS the BOTTOM edge of the visible Lx string; text extends upward.
+        //   - Value placed just below rawCy: vy = rawCy + GAP   (no labelWidthPx needed)
         //
         // Collision detection: skip any value box that overlaps an already-drawn one.
 
@@ -186,11 +188,12 @@ export function PdfViewer({
           let vx: number;
           let vy: number;
           if (isRotated) {
-            // Label advances downward → offset vertically
+            // rawCy is already the bottom of the Lx string — text goes upward.
+            // Place value just below that bottom edge.
             vx = rawCx;
-            vy = rawCy + labelWidthPx + GAP + HALF_H;
+            vy = rawCy + GAP + HALF_H;
           } else {
-            // Label advances to the right → offset horizontally
+            // rawCx is the left edge — skip past the full string width then add gap.
             vx = rawCx + labelWidthPx + GAP;
             vy = rawCy;
           }

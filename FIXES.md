@@ -40,14 +40,19 @@ page 1 already contains full written-out labels and overlaying values
 produces orphaned floaters. All step-0 values appear in the sidebar table only.
 
 Positioning rules (generic, no per-schema hardcoding):
-- rotation=0 or undefined → value drawn to the RIGHT of the label END
-  vx = rawCx + textWidth*zoom + GAP (5 canvas px)
-- rotation≠0 (typically 90°) → value drawn BELOW the label END
-  vy = rawCy + textWidth*zoom + GAP (5 canvas px)
-  (for a 90° CCW label the advance direction is screen-downward,
-   so textWidth*zoom gives the screen-downward extent of the Lx glyph)
+
+For rotation=0 (horizontal labels):
+  rawCx is the LEFT edge of the Lx string; text extends rightward.
+  vx = rawCx + textWidth*zoom + GAP (5 canvas px after right end)
+
+For rotation≠0 (typically 90° CCW):
+  PDF baseline advances in +y_pdf (upward in PDF space).
+  After Y-flip, text extends UPWARD in screen space from rawCy.
+  rawCy IS the bottom edge of the Lx string — no labelWidthPx offset needed.
+  vx = rawCx, vy = rawCy + GAP (5 canvas px below bottom edge)
+
 - textWidth (PDF pts from pdfjs item.width) stored in PointCoord and
-  threaded through LabelCoord → overlay props for zoom-correct scaling
+  threaded through LabelCoord → overlay props; only used for rotation=0
 - Fallback 16 canvas px if textWidth absent (old DB entries pre-redetect)
 - Clamped so value never renders outside the canvas bounds
 
