@@ -6,12 +6,23 @@ description: How dimension values are drawn over the schema PDF in pdf-viewer.ts
 ## Rule
 Draw the dimension value TEXT NEXT TO the Lx anchor point — do not cover or replace the original Lx glyph.
 
-- rotation=0 (horizontal label): value goes to the RIGHT, `vx = rawCx + 8px gap`
-- rotation≠0 (rotated label, typically 90°): value goes BELOW, `vy = rawCy + 8px gap + halfH`
+- rotation=0 (horizontal label): value goes to the RIGHT of the label END
+  `vx = rawCx + textWidth*zoom + GAP_PX`
+- rotation≠0 (rotated label, typically 90° CCW): value goes BELOW the label END
+  `vy = rawCy + textWidth*zoom + GAP_PX`
+  (for 90° CCW labels, advance direction is screen-downward, so textWidth*zoom = screen-vertical extent)
+- GAP_PX = 5 canvas pixels (fixed, zoom-independent)
 - Font: bold 11px Inter, color #4A5568
 - Background: `rgba(230,235,240,0.88)`, 3px pad, sized to value text only
-- Collision detection: skip value if its box overlaps an already-drawn box (handles tight clusters)
+- Collision detection: skip value if its box overlaps an already-drawn box
+- Fallback: 16px assumed label width when textWidth absent (old DB entries)
 
-**Why:** Multiple cover-rect attempts (axis-aligned, rotated, exact-glyph-size) all caused visible bleed onto neighbouring red dimension lines at various zoom levels. White covers are fundamentally fragile because the cover size depends on render-time glyph metrics that vary with PDF fonts and zoom. Placing values next to labels is robust at any zoom and leaves the original drawing fully intact.
+## textWidth data flow
+`detectLabels.ts` captures `item.width` from pdfjs `getTextContent()` items.
+Stored as `PointCoord.textWidth` (PDF pts, rounded to 2dp).
+Threaded through `LabelCoord` in `viewer.tsx` → overlay prop in `pdf-viewer.tsx`.
+After any detectLabels.ts change, run `/api/schema/<slug>/redetect` to refresh DB.
 
-**How to apply:** The `rotation` field from `PointCoord` is still stored in detection and threaded through to overlay props — it drives the "right vs below" positioning decision. `textWidth`/`textHeight` are not needed and must not be re-added.
+**Why:** A gap measured from the anchor START (baseline-left) places value text inside the Lx glyph, causing visual merging. Using textWidth*zoom to find the label END, then adding a small fixed gap, correctly separates label and value at any zoom.
+
+**Why not cover rects:** Multiple cover-rect attempts all caused bleed onto neighbouring red dimension lines at various zoom levels. Covering is fragile because required cover size varies with PDF fonts and zoom. Placing values next to labels is robust at any zoom and leaves the original drawing fully intact.

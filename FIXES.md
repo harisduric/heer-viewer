@@ -35,9 +35,15 @@ Dimension values are drawn NEXT TO their Lx anchor on the overlay canvas.
 The original Lx text in the PDF is left completely untouched — no covering.
 
 Positioning rules (generic, no per-schema hardcoding):
-- rotation=0 or undefined → value drawn to the RIGHT of the anchor point
-- rotation≠0 (typically 90°) → value drawn BELOW the anchor point
-- Gap between anchor and value: 8 canvas px
+- rotation=0 or undefined → value drawn to the RIGHT of the label END
+  vx = rawCx + textWidth*zoom + GAP (5 canvas px)
+- rotation≠0 (typically 90°) → value drawn BELOW the label END
+  vy = rawCy + textWidth*zoom + GAP (5 canvas px)
+  (for a 90° CCW label the advance direction is screen-downward,
+   so textWidth*zoom gives the screen-downward extent of the Lx glyph)
+- textWidth (PDF pts from pdfjs item.width) stored in PointCoord and
+  threaded through LabelCoord → overlay props for zoom-correct scaling
+- Fallback 16 canvas px if textWidth absent (old DB entries pre-redetect)
 - Clamped so value never renders outside the canvas bounds
 
 Style:

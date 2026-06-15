@@ -14,7 +14,7 @@ interface PdfViewerProps {
   pageNumber?: number;
   scale?: number;
   crop?: { cropX: number; cropY: number; cropW: number; cropH: number } | null;
-  overlays?: { x: number; y: number; label: string; value: string; rotation?: number }[];
+  overlays?: { x: number; y: number; label: string; value: string; rotation?: number; textWidth?: number }[];
   interactive?: boolean;
 }
 
@@ -128,7 +128,11 @@ export function PdfViewer({
 
         const FONT = 11;
         const PAD = 3;   // padding inside the value's background highlight
-        const GAP = 8;   // canvas px gap between Lx anchor and drawn value text
+        // Visual gap (canvas px) between the END of the Lx glyph and the START of the value.
+        // Kept small — the label-end is computed precisely from textWidth * zoom.
+        const GAP = 5;
+        // Fallback label width (canvas px) when textWidth is absent (old DB entries).
+        const LABEL_W_FALLBACK = 16;
 
         overlayContext.font = `bold ${FONT}px Inter, sans-serif`;
 
@@ -144,12 +148,17 @@ export function PdfViewer({
 
         // ── Draw value labels next to their Lx anchor ───────────────────────
         // The original Lx text on the PDF is left completely untouched.
-        // Horizontal labels (rotation=0): value drawn to the right of the anchor.
-        // Rotated labels (rotation≠0, typically 90°): value drawn below the anchor.
-        // Light-grey background sized only to the value text; no cover rectangles.
+        // Anchor point (rawCx, rawCy) is the baseline-left of the Lx glyph.
         //
-        // Collision detection: skip any value box that overlaps an already-drawn one
-        // so tight clusters (L2/L3/L4 etc.) stay readable.
+        // For horizontal labels (rotation=0):
+        //   - Lx advances to the right → value placed to the RIGHT of label end
+        //   - vx = rawCx + labelWidthPx + GAP
+        //
+        // For rotated labels (rotation≠0, typically 90° CCW):
+        //   - Lx advances downward in screen space → value placed BELOW label end
+        //   - vy = rawCy + labelWidthPx + GAP   (advance width = screen-downward extent)
+        //
+        // Collision detection: skip any value box that overlaps an already-drawn one.
 
         const HALF_H = Math.ceil(FONT / 2) + PAD;
         const drawnBoxes: { x: number; y: number; w: number; h: number }[] = [];
@@ -168,14 +177,21 @@ export function PdfViewer({
           const tw = overlayContext.measureText(text).width;
           const isRotated = !!overlay.rotation;
 
-          // Candidate position: right of anchor for horizontal, below for rotated
+          // labelWidthPx: the rendered advance width of the Lx glyph in canvas pixels.
+          // overlay.textWidth is in PDF points; multiply by zoom to get canvas px.
+          const labelWidthPx =
+            overlay.textWidth != null ? overlay.textWidth * zoom : LABEL_W_FALLBACK;
+
+          // Place value after the label end + GAP
           let vx: number;
           let vy: number;
           if (isRotated) {
+            // Label advances downward → offset vertically
             vx = rawCx;
-            vy = rawCy + GAP + HALF_H;
+            vy = rawCy + labelWidthPx + GAP + HALF_H;
           } else {
-            vx = rawCx + GAP;
+            // Label advances to the right → offset horizontally
+            vx = rawCx + labelWidthPx + GAP;
             vy = rawCy;
           }
 
