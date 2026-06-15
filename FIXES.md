@@ -34,6 +34,11 @@ The Koordinaten editor only has:
 Dimension values are drawn NEXT TO their Lx anchor on the overlay canvas.
 The original Lx text in the PDF is left completely untouched — no covering.
 
+Scope: overlays are ONLY drawn for steps 1–4 (BO/SE/KS/DE).
+Step 0 (Übersicht, page 1) renders the PDF completely unmodified —
+page 1 already contains full written-out labels and overlaying values
+produces orphaned floaters. All step-0 values appear in the sidebar table only.
+
 Positioning rules (generic, no per-schema hardcoding):
 - rotation=0 or undefined → value drawn to the RIGHT of the label END
   vx = rawCx + textWidth*zoom + GAP (5 canvas px)

@@ -100,18 +100,10 @@ export default function ViewerPage() {
   let anoCrops: { label: string; crop: CropRect }[] = [];
 
   if (step === 0) {
-    const p1 =
-      (coords as Record<string, Record<string, { x: number; y: number }>> | undefined)?.[
-        "page1"
-      ] ?? {};
-    const dims = (parsedExecution.globalDimensions as Record<string, string>) ?? {};
-    const all = Object.entries(dims)
-      .map(([key, val]) => {
-        const c = p1[key];
-        return c ? { label: key, value: String(val), x: c.x, y: c.y } : null;
-      })
-      .filter((v): v is NonNullable<typeof v> => v !== null);
-    overlays = highlightedLabel ? all.filter((o) => o.label === highlightedLabel) : all;
+    // Übersicht (page 1): the drawing already contains full written-out labels
+    // (e.g. "AM-LÄNGE"). Overlaying dimension values produces orphaned floaters
+    // with no clear association. All values are shown in the sidebar table instead.
+    // overlays stays empty — page renders unmodified.
   } else if (step >= 1 && step <= 4) {
     const sKey = SECTION_KEYS[step - 1];
     const cropMap =
