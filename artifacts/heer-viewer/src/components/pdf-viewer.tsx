@@ -14,7 +14,17 @@ interface PdfViewerProps {
   pageNumber?: number;
   scale?: number;
   crop?: { cropX: number; cropY: number; cropW: number; cropH: number } | null;
-  overlays?: { x: number; y: number; label: string; value: string; rotation?: number }[];
+  overlays?: {
+    x: number;
+    y: number;
+    label: string;
+    value: string;
+    rotation?: number;
+    /** Advance width of the original L-label glyph in PDF points (from pdfjs item.width). */
+    textWidth?: number;
+    /** Em-square height of the original L-label in PDF points (from font size). */
+    textHeight?: number;
+  }[];
   interactive?: boolean;
 }
 
@@ -200,21 +210,29 @@ export function PdfViewer({
           drawnBoxes.push(box);
 
           // ── Rotated cover for original L-label ──────────────────────────────
-          // If the stored label had a non-zero rotation (90° CCW, -90° CW, etc.),
+          // When the stored label has a non-zero rotation (90° CCW, -90° CW, etc.),
           // the axis-aligned cover below won't fully hide the rotated glyphs.
-          // Draw an additional cover rect rotated to match the original text angle.
-          // The new value text is always drawn horizontally on top of this.
-          if (overlay.rotation) {
+          // Draw a cover rect rotated to match the original text angle, sized to
+          // exactly the glyph's own advance-width × em-height + 2px pad only.
+          // This keeps the cover tight so it doesn't bleed onto adjacent red lines.
+          if (overlay.rotation && overlay.textWidth && overlay.textHeight) {
             const rotRad = overlay.rotation * (Math.PI / 180);
-            // Cover half-extents in canvas px, scaled with zoom so they match the
-            // original label size regardless of how deep the user has zoomed in.
-            const coverHalfW = Math.max(12, 8 * zoom) + PAD;
-            const coverHalfH = Math.max(5, 3.5 * zoom) + PAD;
+            const COVER_PAD = 2; // px — just enough to fully hide anti-aliased edges
+            const twPx = overlay.textWidth * zoom;  // glyph advance width in canvas px
+            const thPx = overlay.textHeight * zoom; // em-square height in canvas px
             overlayContext.save();
             overlayContext.translate(rawCx, rawCy);
             overlayContext.rotate(rotRad);
-            overlayContext.fillStyle = "rgba(255,255,255,0.95)";
-            overlayContext.fillRect(-coverHalfW, -coverHalfH, coverHalfW * 2, coverHalfH * 2);
+            overlayContext.fillStyle = "rgba(255,255,255,0.97)";
+            // Origin is at the baseline-left corner of the original glyph.
+            // x: from -COVER_PAD (before start) to twPx + COVER_PAD (after end).
+            // y: from -(thPx + COVER_PAD) (above baseline) to +COVER_PAD (below).
+            overlayContext.fillRect(
+              -COVER_PAD,
+              -(thPx + COVER_PAD),
+              twPx + 2 * COVER_PAD,
+              thPx + 2 * COVER_PAD
+            );
             overlayContext.restore();
           }
 

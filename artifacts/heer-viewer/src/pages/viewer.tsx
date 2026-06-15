@@ -121,7 +121,7 @@ export default function ViewerPage() {
           | undefined
       )?.["page2_crops"] ?? {};
     crop = cropMap[sKey] ?? null;
-    type LabelCoord = { x: number; y: number; rotation?: number };
+    type LabelCoord = { x: number; y: number; rotation?: number; textWidth?: number; textHeight?: number };
     const p2Sections =
       (coords as Record<string, Record<string, Record<string, LabelCoord>>> | undefined)?.[
         "page2"
@@ -146,7 +146,7 @@ export default function ViewerPage() {
       if (positions.length === 0) {
         console.warn(`[Viewer] Label ${label} not detected for section ${sKey} — no overlay will be shown`);
       }
-      return positions.map((pos) => ({ label, value: val, x: pos.x, y: pos.y, rotation: pos.rotation }));
+      return positions.map((pos) => ({ label, value: val, x: pos.x, y: pos.y, rotation: pos.rotation, textWidth: pos.textWidth, textHeight: pos.textHeight }));
     });
     overlays = highlightedLabel ? all.filter((o) => o.label === highlightedLabel) : all;
   } else if (step === 5) {

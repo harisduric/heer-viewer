@@ -6,7 +6,12 @@ interface PdfPageProxy {
   pageNumber: number;
   getViewport: (opts: { scale: number }) => { width: number; height: number };
   getTextContent: () => Promise<{
-    items: Array<{ str: string; transform: number[] }>;
+    items: Array<{
+      str: string;
+      transform: number[];
+      /** Advance width of the text item in PDF user-space units (points). */
+      width: number;
+    }>;
   }>;
 }
 
@@ -26,6 +31,12 @@ export interface PointCoord {
   /** Rotation in degrees derived from the PDF text transform: atan2(t[1], t[0]).
    *  0 = horizontal, 90 = 90° CCW, -90 = 90° CW. Omitted when 0. */
   rotation?: number;
+  /** Advance width of the original glyph string in PDF user-space units (points).
+   *  Comes directly from pdfjs item.width. Used for exact cover-rect sizing. */
+  textWidth?: number;
+  /** Em-square height of the original glyph in PDF user-space units (points).
+   *  Derived from Math.hypot(t[0], t[1]) — the font size. */
+  textHeight?: number;
 }
 
 export interface CropRegion {
@@ -151,7 +162,7 @@ export async function detectLabelsFromPdf(
   pdfBytes: Buffer,
   cropMap?: Partial<Record<SectionKey, CropRegion>>
 ): Promise<DetectionResult> {
-  const rawItems: Array<{ str: string; x: number; y: number; fontSize: number; isRotated: boolean; rotation: number }> = [];
+  const rawItems: Array<{ str: string; x: number; y: number; fontSize: number; isRotated: boolean; rotation: number; textWidth: number }> = [];
   let pageH = DETECT_PAGE_H;
 
   try {
@@ -196,6 +207,9 @@ export async function detectLabelsFromPdf(
             fontSize,
             isRotated,
             rotation,
+            // item.width is the advance width in PDF user-space units (same scale as t[4]/t[5]).
+            // Guard against missing/invalid values from older pdfjs builds.
+            textWidth: Number.isFinite(item.width) && item.width > 0 ? item.width : 0,
           });
         }
         return "";
@@ -244,6 +258,10 @@ export async function detectLabelsFromPdf(
       x: Math.round(item.x),
       y: Math.round(item.y),
       ...(item.rotation !== 0 ? { rotation: item.rotation } : {}),
+      // Store glyph dimensions for tight cover-rect sizing in the viewer.
+      // Round to 2 decimal places — PDF points; fractional precision matters at high zoom.
+      ...(item.textWidth > 0 ? { textWidth: Math.round(item.textWidth * 100) / 100 } : {}),
+      textHeight: Math.round(item.fontSize * 100) / 100,
     };
 
     // Primary coord: first occurrence only (backward compat with koordinaten editor)
