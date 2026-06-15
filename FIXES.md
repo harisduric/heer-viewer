@@ -107,6 +107,32 @@ works cleanly. At user-zoomed scale, pan gesture handles navigation via
 transform: translate(pan.x, pan.y) — CSS centering breakdown at high
 zoom is not a problem.
 
+## 10. Print feature — "Drucken" button (BO/SE/KS/DE, 4 pages)
+Approach: React portal (createPortal → document.body), NOT a new window/tab.
+
+Screen hiding: `@media print { #root { visibility: hidden; } }`.
+Portal `#heer-print-portal` is a direct child of body (sibling to #root).
+Portal itself: `visibility: visible` → overrides body inheritance for the portal subtree.
+
+Portal positioned off-screen on screen (`position: fixed; top: -9999px; left: -9999px`)
+so canvas buffers ARE rendered (canvases in display:none containers never paint).
+
+Each of 4 print pages is a `.heer-print-page` div (flex column) containing:
+  - `.heer-print-page-title` (section label)
+  - `.heer-print-pdf-area` (flex:1, centers the PdfViewer canvas)
+  - PdfViewer with `interactive={false}` and `onRendered` callback
+
+Scale per section: Math.min(PRINT_W=1060 / cropW, PRINT_H=700 / cropH)
+→ guarantees canvas fits in A4 landscape usable area without CSS canvas scaling.
+→ overlay canvas alignment is preserved (no CSS rescaling of canvas element).
+
+`@page { size: A4 landscape; margin: 8mm; }` MUST be at TOP LEVEL of <style>,
+NOT nested inside @media print — browsers reject nested @page rules.
+
+Timing: onRendered prop added to PdfViewer, called after setLoading(false) in
+success path. useEffect waits for printRenderedCount >= 4, then
+requestAnimationFrame(() => window.print()); afterprint event unmounts portal.
+
 ## 6. WORKING STATE CONFIRMED (do not break this!)
 - Auto-detection of L1-L20 positions on page 2 works
   correctly for PLK_W-BO_G-MV_AL

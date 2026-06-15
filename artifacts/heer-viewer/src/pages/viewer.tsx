@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useLocation } from "wouter";
 import { useAppStore } from "../store";
 import { Layout } from "../components/layout";
 import { Button } from "@/components/ui/button";
-import { ChevronLeft, ChevronRight, PanelRight, PanelRightClose } from "lucide-react";
+import { ChevronLeft, ChevronRight, PanelRight, PanelRightClose, Printer } from "lucide-react";
 import {
   useGetCoordinates,
   useGetSchemaLibrary,
@@ -32,6 +33,8 @@ export default function ViewerPage() {
   const [step, setStep] = useState(0);
   const [panelOpen, setPanelOpen] = useState(true);
   const [highlightedLabel, setHighlightedLabel] = useState<string | null>(null);
+  const [printing, setPrinting] = useState(false);
+  const [printRenderedCount, setPrintRenderedCount] = useState(0);
 
   // Measure the PDF area so we can scale each crop to fit both dimensions.
   const pdfAreaRef = useRef<HTMLDivElement>(null);
@@ -48,6 +51,28 @@ export default function ViewerPage() {
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+
+  // A4 landscape with 8mm margins ≈ 1060 × 700 usable px at 96dpi.
+  // Used to compute per-section canvas scale for the print portal.
+  const PRINT_W = 1060;
+  const PRINT_H = 700;
+
+  // Trigger window.print() once all 4 sections have finished rendering.
+  useEffect(() => {
+    if (!printing || printRenderedCount < 4) return;
+    const frame = requestAnimationFrame(() => {
+      window.print();
+    });
+    const cleanup = () => {
+      setPrinting(false);
+      setPrintRenderedCount(0);
+    };
+    window.addEventListener("afterprint", cleanup, { once: true });
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("afterprint", cleanup);
+    };
+  }, [printing, printRenderedCount]);
 
   useGetSchemaLibrary(); // warm library data
   const schemaName = parsedExecution?.matchedSchema ?? null;
@@ -193,7 +218,17 @@ export default function ViewerPage() {
               </button>
             );
           })}
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-1">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => { setPrintRenderedCount(0); setPrinting(true); }}
+              disabled={printing}
+              className="flex items-center gap-1.5 text-xs h-8 px-3"
+            >
+              <Printer className="w-3.5 h-3.5" />
+              {printing ? "Wird gedruckt…" : "Drucken"}
+            </Button>
             <Button variant="ghost" size="icon" onClick={() => setPanelOpen(!panelOpen)}>
               {panelOpen ? <PanelRightClose className="w-4 h-4" /> : <PanelRight className="w-4 h-4" />}
             </Button>
@@ -332,6 +367,130 @@ export default function ViewerPage() {
           </Button>
         </div>
       </div>
+      {/* Print portal — mounted at document.body so @media print can hide #root and show this */}
+      {printing && schemaName && parsedExecution &&
+        createPortal(
+          <>
+            <style>{`
+              @page { size: A4 landscape; margin: 8mm; }
+              @media screen {
+                #heer-print-portal {
+                  position: fixed;
+                  top: -9999px;
+                  left: -9999px;
+                  width: 100vw;
+                  height: 100vh;
+                  overflow: hidden;
+                  pointer-events: none;
+                }
+              }
+              @media print {
+                #root { visibility: hidden; }
+                #heer-print-portal {
+                  position: static;
+                  top: 0;
+                  left: 0;
+                  width: 100%;
+                  visibility: visible;
+                }
+                .heer-print-page {
+                  visibility: visible;
+                  display: flex;
+                  flex-direction: column;
+                  width: 100vw;
+                  height: 100vh;
+                  padding: 8mm;
+                  box-sizing: border-box;
+                  background: white;
+                }
+                .heer-print-page * { visibility: visible; }
+                .heer-print-page-title {
+                  font-family: sans-serif;
+                  font-size: 13pt;
+                  font-weight: bold;
+                  margin-bottom: 6pt;
+                  color: #2D3748;
+                  align-self: flex-start;
+                  flex-shrink: 0;
+                }
+                .heer-print-pdf-area {
+                  flex: 1;
+                  min-height: 0;
+                  width: 100%;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  background: white !important;
+                }
+                .heer-print-pdf-area > div {
+                  background: white !important;
+                }
+              }
+            `}</style>
+            <div id="heer-print-portal">
+              {SECTION_KEYS.map((sKey, idx) => {
+                type LabelCoord = { x: number; y: number; rotation?: number; textWidth?: number };
+                const cropMap =
+                  (coords as Record<string, Record<string, CropRect>> | undefined)?.[
+                    "page2_crops"
+                  ] ?? {};
+                const sectionCrop: CropRect | null = cropMap[sKey] ?? null;
+                const p2Sections =
+                  (coords as Record<string, Record<string, Record<string, LabelCoord>>> | undefined)?.[
+                    "page2"
+                  ] ?? {};
+                const p2AllSections =
+                  (coords as Record<string, Record<string, Record<string, LabelCoord[]>>> | undefined)?.[
+                    "page2_all"
+                  ] ?? {};
+                const sCoords = p2Sections[sKey] ?? {};
+                const sAllCoords = p2AllSections[sKey] ?? {};
+                const sData =
+                  (parsedExecution.sections?.[sKey as SectionKey] as Record<string, string>) ?? {};
+                const sectionOverlays = Object.entries(sData).flatMap(([label, val]) => {
+                  const positions: LabelCoord[] =
+                    sAllCoords[label]?.length > 0
+                      ? sAllCoords[label]
+                      : sCoords[label]
+                      ? [sCoords[label]]
+                      : [];
+                  return positions.map((pos) => ({
+                    label,
+                    value: val,
+                    x: pos.x,
+                    y: pos.y,
+                    rotation: pos.rotation,
+                    textWidth: pos.textWidth,
+                  }));
+                });
+                const printScale = sectionCrop
+                  ? Math.min(PRINT_W / sectionCrop.cropW, PRINT_H / sectionCrop.cropH)
+                  : 2;
+                return (
+                  <div
+                    key={sKey}
+                    className="heer-print-page"
+                    style={{ breakAfter: idx < SECTION_KEYS.length - 1 ? "page" : "auto" }}
+                  >
+                    <p className="heer-print-page-title">{sKey}</p>
+                    <div className="heer-print-pdf-area">
+                      <PdfViewer
+                        url={getGetSchemaPageUrl(schemaName, 2)}
+                        pageNumber={1}
+                        scale={printScale}
+                        crop={sectionCrop}
+                        overlays={sectionOverlays}
+                        interactive={false}
+                        onRendered={() => setPrintRenderedCount((n) => n + 1)}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>,
+          document.body
+        )}
     </Layout>
   );
 }

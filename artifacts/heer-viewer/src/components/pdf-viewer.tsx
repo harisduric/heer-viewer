@@ -16,6 +16,7 @@ interface PdfViewerProps {
   crop?: { cropX: number; cropY: number; cropW: number; cropH: number } | null;
   overlays?: { x: number; y: number; label: string; value: string; rotation?: number; textWidth?: number }[];
   interactive?: boolean;
+  onRendered?: () => void;
 }
 
 export function PdfViewer({
@@ -26,6 +27,7 @@ export function PdfViewer({
   crop,
   overlays = [],
   interactive = false,
+  onRendered,
 }: PdfViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const pdfCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -212,7 +214,10 @@ export function PdfViewer({
           overlayContext.fillText(text, vx, vy);
         }
 
-        if (active) setLoading(false);
+        if (active) {
+          setLoading(false);
+          onRendered?.();
+        }
       } catch (err) {
         console.error(err);
         if (active) {
