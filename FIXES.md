@@ -108,30 +108,41 @@ transform: translate(pan.x, pan.y) — CSS centering breakdown at high
 zoom is not a problem.
 
 ## 10. Print feature — "Drucken" button (BO/SE/KS/DE, 4 pages)
-Approach: React portal (createPortal → document.body), NOT a new window/tab.
 
-Screen hiding: `@media print { #root { visibility: hidden; } }`.
-Portal `#heer-print-portal` is a direct child of body (sibling to #root).
-Portal itself: `visibility: visible` → overrides body inheritance for the portal subtree.
+DO NOT use off-screen PdfViewer portals (position:fixed; top:-9999px): browsers
+do not reliably paint canvas buffers that are far off-screen. Do NOT use
+`visibility:hidden` on #root: it still occupies layout space and produces phantom
+blank pages alongside the real ones.
 
-Portal positioned off-screen on screen (`position: fixed; top: -9999px; left: -9999px`)
-so canvas buffers ARE rendered (canvases in display:none containers never paint).
+### Correct approach: capture on-screen canvases as PNG images, then print <img> tags
 
-Each of 4 print pages is a `.heer-print-page` div (flex column) containing:
-  - `.heer-print-page-title` (section label)
-  - `.heer-print-pdf-area` (flex:1, centers the PdfViewer canvas)
-  - PdfViewer with `interactive={false}` and `onRendered` callback
+1. CAPTURE PHASE: When "Drucken" is clicked, captureQueueRef is initialised with
+   { step: 1, images: [], originalStep: N }. isCapturing=true is set. step is
+   forced to 1 (BO). The MAIN, ON-SCREEN PdfViewer receives
+   `onRendered={handlePrintRendered}`. After each render completes, PdfViewer
+   composites pdfCanvas + overlayCanvas into a temp canvas and calls
+   onRendered(composite.toDataURL('image/png')). handlePrintRendered reads from
+   captureQueueRef (ref, never stale), advances step 1→2→3→4, and after all 4
+   images are collected calls setPrintImages([...imgs]) and restores originalStep.
 
-Scale per section: Math.min(PRINT_W=1060 / cropW, PRINT_H=700 / cropH)
-→ guarantees canvas fits in A4 landscape usable area without CSS canvas scaling.
-→ overlay canvas alignment is preserved (no CSS rescaling of canvas element).
+2. PRINT PHASE: A useEffect on printImages calls window.print() after React
+   commits the portal DOM (effects always run after commit). The portal contains
+   4 <img src={dataUrl}> elements (no canvas rendering, no off-screen issues).
+   `object-fit: contain` on each img handles KS portrait section on landscape page.
 
-`@page { size: A4 landscape; margin: 8mm; }` MUST be at TOP LEVEL of <style>,
-NOT nested inside @media print — browsers reject nested @page rules.
+3. CSS: `@media print { #root { display: none !important; } }` — display:none
+   takes NO layout space → zero phantom pages. Portal `#heer-print-view` is
+   `display: none` on screen and `display: block` during print.
 
-Timing: onRendered prop added to PdfViewer, called after setLoading(false) in
-success path. useEffect waits for printRenderedCount >= 4, then
-requestAnimationFrame(() => window.print()); afterprint event unmounts portal.
+4. afterprint event clears printImages → portal unmounts.
+
+5. `@page { size: A4 landscape; margin: 8mm; }` MUST be at TOP LEVEL of <style>,
+   NOT nested inside @media print — browsers reject nested @page rules.
+
+### Why captureQueueRef instead of state
+State updates are batched; reading captureStep from a useCallback closure risks
+stale values across 4 sequential renders. Mutating captureQueueRef.current
+directly is always in sync and fires handlePrintRendered reads fresh data.
 
 ## 6. WORKING STATE CONFIRMED (do not break this!)
 - Auto-detection of L1-L20 positions on page 2 works

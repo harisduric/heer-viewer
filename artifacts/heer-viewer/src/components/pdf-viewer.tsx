@@ -16,7 +16,7 @@ interface PdfViewerProps {
   crop?: { cropX: number; cropY: number; cropW: number; cropH: number } | null;
   overlays?: { x: number; y: number; label: string; value: string; rotation?: number; textWidth?: number }[];
   interactive?: boolean;
-  onRendered?: () => void;
+  onRendered?: (dataUrl: string) => void;
 }
 
 export function PdfViewer({
@@ -216,7 +216,16 @@ export function PdfViewer({
 
         if (active) {
           setLoading(false);
-          onRendered?.();
+          if (onRendered) {
+            // Composite PDF layer + overlay layer into one PNG snapshot.
+            const composite = document.createElement("canvas");
+            composite.width = pdfCanvas.width;
+            composite.height = pdfCanvas.height;
+            const ctx = composite.getContext("2d")!;
+            ctx.drawImage(pdfCanvas, 0, 0);
+            ctx.drawImage(overlayCanvas, 0, 0);
+            onRendered(composite.toDataURL("image/png"));
+          }
         }
       } catch (err) {
         console.error(err);
