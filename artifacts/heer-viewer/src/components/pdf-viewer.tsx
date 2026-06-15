@@ -128,15 +128,16 @@ export function PdfViewer({
         overlayContext.clearRect(0, 0, pdfCanvas.width, pdfCanvas.height);
         overlayContext.textBaseline = "middle";
 
-        const FONT = 11;
+        const FONT_LARGE = 18; // non-clustered labels
+        const FONT_SMALL = 13; // labels with a neighbour within CLUSTER_RADIUS PDF pts
+        // Labels closer than this (in PDF points) share the smaller font to reduce overlap.
+        const CLUSTER_RADIUS = 60;
         const PAD = 3;   // padding inside the value's background highlight
         // Visual gap (canvas px) between the END of the Lx glyph and the START of the value.
         // Kept small — the label-end is computed precisely from textWidth * zoom.
         const GAP = 5;
         // Fallback label width (canvas px) when textWidth is absent (old DB entries).
         const LABEL_W_FALLBACK = 16;
-
-        overlayContext.font = `bold ${FONT}px Inter, sans-serif`;
 
         // ── Pre-compute canvas positions for all valid overlays ──────────────
         const items = overlays
@@ -147,6 +148,20 @@ export function PdfViewer({
             const rawCy = correctedY * zoom + offsetY;
             return { overlay, rawCx, rawCy };
           });
+
+        // Assign per-item font size: a label gets FONT_SMALL when any other overlay
+        // anchor is within CLUSTER_RADIUS PDF points (tight groups like L2/L3/L4,
+        // L7/L9, L11/L12/L13). Comparison is in PDF point space, independent of zoom.
+        const fontSizes = items.map((item, i) =>
+          items.some((other, j) => {
+            if (j === i) return false;
+            const dx = item.overlay.x - other.overlay.x;
+            const dy = item.overlay.y - other.overlay.y;
+            return Math.sqrt(dx * dx + dy * dy) < CLUSTER_RADIUS;
+          })
+            ? FONT_SMALL
+            : FONT_LARGE
+        );
 
         // ── Draw value labels next to their Lx anchor ───────────────────────
         // The original Lx text on the PDF is left completely untouched.
@@ -164,7 +179,6 @@ export function PdfViewer({
         //
         // Collision detection: skip any value box that overlaps an already-drawn one.
 
-        const HALF_H = Math.ceil(FONT / 2) + PAD;
         const drawnBoxes: { x: number; y: number; w: number; h: number }[] = [];
 
         function hasCollision(box: { x: number; y: number; w: number; h: number }): boolean {
@@ -176,7 +190,12 @@ export function PdfViewer({
           return false;
         }
 
-        for (const { overlay, rawCx, rawCy } of items) {
+        for (let i = 0; i < items.length; i++) {
+          const { overlay, rawCx, rawCy } = items[i];
+          const FONT = fontSizes[i];
+          const HALF_H = Math.ceil(FONT / 2) + PAD;
+          overlayContext.font = `bold ${FONT}px Inter, sans-serif`;
+
           const text = overlay.value;
           const tw = overlayContext.measureText(text).width;
           const isRotated = !!overlay.rotation;

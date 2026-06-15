@@ -76,7 +76,12 @@ threaded through LabelCoord → overlay props.
 - Fallback: 16 canvas px when textWidth is absent (old DB entries)
 
 ### Style
-- Font: bold 11px Inter, color #4A5568
+- Font: bold, Inter, color #4A5568
+  - FONT_LARGE = 18px for non-clustered labels
+  - FONT_SMALL = 13px for labels with any neighbour within CLUSTER_RADIUS=60 PDF pts
+    (catches tight groups such as L2/L3/L4 in BO/SE, L7/L9 in KS, L11/L12/L13)
+  - Cluster check in PDF-point space (zoom-independent); FONT and HALF_H computed
+    per-item inside the draw loop before measureText
 - Background: rgba(230,235,240,0.88), 3px pad, tight behind value text only
 - Collision detection: if two value boxes overlap, the later one is skipped
 - Clamped so value never renders outside canvas bounds
