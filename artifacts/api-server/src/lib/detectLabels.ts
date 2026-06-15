@@ -23,6 +23,9 @@ const pdfParse = _require("pdf-parse") as (
 export interface PointCoord {
   x: number;
   y: number;
+  /** Rotation in degrees derived from the PDF text transform: atan2(t[1], t[0]).
+   *  0 = horizontal, 90 = 90° CCW, -90 = 90° CW. Omitted when 0. */
+  rotation?: number;
 }
 
 export interface CropRegion {
@@ -148,7 +151,7 @@ export async function detectLabelsFromPdf(
   pdfBytes: Buffer,
   cropMap?: Partial<Record<SectionKey, CropRegion>>
 ): Promise<DetectionResult> {
-  const rawItems: Array<{ str: string; x: number; y: number; fontSize: number; isRotated: boolean }> = [];
+  const rawItems: Array<{ str: string; x: number; y: number; fontSize: number; isRotated: boolean; rotation: number }> = [];
   let pageH = DETECT_PAGE_H;
 
   try {
@@ -182,6 +185,9 @@ export async function detectLabelsFromPdf(
           const fontSize = Math.hypot(t[0], t[1]);
           // Text is rotated ≥45° when the sin component dominates the cos component.
           const isRotated = Math.abs(t[1]) > Math.abs(t[0]);
+          // Rotation in degrees from the PDF transform matrix: atan2(b, a).
+          // 0 = horizontal, 90 = 90° CCW, -90 = 90° CW.
+          const rotation = Math.round(Math.atan2(t[1], t[0]) * (180 / Math.PI));
 
           rawItems.push({
             str: s,
@@ -189,6 +195,7 @@ export async function detectLabelsFromPdf(
             y: pageH - t[5], // flip from PDF space (bottom-up) to screen space (top-down)
             fontSize,
             isRotated,
+            rotation,
           });
         }
         return "";
@@ -233,7 +240,11 @@ export async function detectLabelsFromPdf(
     if (item.isRotated) rotatedCount++; else normalCount++;
 
     const sec = assignSection(item.x, item.y, cropMap ?? {}, sectionPos);
-    const coord: PointCoord = { x: Math.round(item.x), y: Math.round(item.y) };
+    const coord: PointCoord = {
+      x: Math.round(item.x),
+      y: Math.round(item.y),
+      ...(item.rotation !== 0 ? { rotation: item.rotation } : {}),
+    };
 
     // Primary coord: first occurrence only (backward compat with koordinaten editor)
     if (!page2[sec][item.str]) {

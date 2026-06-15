@@ -94,7 +94,7 @@ export default function ViewerPage() {
   // --- Compute overlays / crops for the current step ---
 
   let crop: CropRect | null = null;
-  let overlays: { x: number; y: number; label: string; value: string }[] = [];
+  let overlays: { x: number; y: number; label: string; value: string; rotation?: number }[] = [];
 
   // Hebegurt: collect ALL active ANO_CODE crops with labels for multi-view
   let anoCrops: { label: string; crop: CropRect }[] = [];
@@ -121,13 +121,14 @@ export default function ViewerPage() {
           | undefined
       )?.["page2_crops"] ?? {};
     crop = cropMap[sKey] ?? null;
+    type LabelCoord = { x: number; y: number; rotation?: number };
     const p2Sections =
-      (coords as Record<string, Record<string, Record<string, { x: number; y: number }>>> | undefined)?.[
+      (coords as Record<string, Record<string, Record<string, LabelCoord>>> | undefined)?.[
         "page2"
       ] ?? {};
     // page2_all stores ALL occurrences per label (covers duplicate text on the drawing)
     const p2AllSections =
-      (coords as Record<string, Record<string, Record<string, { x: number; y: number }[]>>> | undefined)?.[
+      (coords as Record<string, Record<string, Record<string, LabelCoord[]>>> | undefined)?.[
         "page2_all"
       ] ?? {};
     const sCoords = p2Sections[sKey] ?? {};
@@ -136,7 +137,7 @@ export default function ViewerPage() {
       (parsedExecution.sections?.[sKey as SectionKey] as Record<string, string>) ?? {};
     const all = Object.entries(sData).flatMap(([label, val]) => {
       // Prefer all-occurrences list; fall back to single coord; warn if neither
-      const positions: { x: number; y: number }[] =
+      const positions: LabelCoord[] =
         sAllCoords[label]?.length > 0
           ? sAllCoords[label]
           : sCoords[label]
@@ -145,7 +146,7 @@ export default function ViewerPage() {
       if (positions.length === 0) {
         console.warn(`[Viewer] Label ${label} not detected for section ${sKey} — no overlay will be shown`);
       }
-      return positions.map((pos) => ({ label, value: val, x: pos.x, y: pos.y }));
+      return positions.map((pos) => ({ label, value: val, x: pos.x, y: pos.y, rotation: pos.rotation }));
     });
     overlays = highlightedLabel ? all.filter((o) => o.label === highlightedLabel) : all;
   } else if (step === 5) {

@@ -14,7 +14,7 @@ interface PdfViewerProps {
   pageNumber?: number;
   scale?: number;
   crop?: { cropX: number; cropY: number; cropW: number; cropH: number } | null;
-  overlays?: { x: number; y: number; label: string; value: string }[];
+  overlays?: { x: number; y: number; label: string; value: string; rotation?: number }[];
   interactive?: boolean;
 }
 
@@ -198,6 +198,25 @@ export function PdfViewer({
           if (hasCollision(box)) continue;
 
           drawnBoxes.push(box);
+
+          // ── Rotated cover for original L-label ──────────────────────────────
+          // If the stored label had a non-zero rotation (90° CCW, -90° CW, etc.),
+          // the axis-aligned cover below won't fully hide the rotated glyphs.
+          // Draw an additional cover rect rotated to match the original text angle.
+          // The new value text is always drawn horizontally on top of this.
+          if (overlay.rotation) {
+            const rotRad = overlay.rotation * (Math.PI / 180);
+            // Cover half-extents in canvas px, scaled with zoom so they match the
+            // original label size regardless of how deep the user has zoomed in.
+            const coverHalfW = Math.max(12, 8 * zoom) + PAD;
+            const coverHalfH = Math.max(5, 3.5 * zoom) + PAD;
+            overlayContext.save();
+            overlayContext.translate(rawCx, rawCy);
+            overlayContext.rotate(rotRad);
+            overlayContext.fillStyle = "rgba(255,255,255,0.95)";
+            overlayContext.fillRect(-coverHalfW, -coverHalfH, coverHalfW * 2, coverHalfH * 2);
+            overlayContext.restore();
+          }
 
           overlayContext.fillStyle = "rgba(255,255,255,0.92)";
           overlayContext.fillRect(box.x, box.y, box.w, box.h);
