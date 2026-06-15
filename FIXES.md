@@ -66,6 +66,19 @@ Y-coordinate correction still required:
 where actual_page_height comes from pdfjs-dist viewport at scale=1,
 because detection uses DETECT_PAGE_H=842 as fallback.
 
+## 8. Multi-page execution description PDFs
+pdf-parse v1.1.1 inserts \x0c (form feed) as the page separator.
+Because \x0c is NOT in [ \t], the normalization regex does not split on it.
+Without explicit handling, the first entry of page 2 gets concatenated
+onto the last line of page 1, producing a malformed line that silently
+drops the page-2 entry.
+
+Fix (permanent — do not remove): at the very start of parseExecutionDescription(),
+before the normalization regex, normalize ALL line terminators to \n:
+  cleanText = pdfText.replace(/\r\n/g, "\n").replace(/[\r\x0c]/g, "\n")
+The normalization regex and split("\n") then run on cleanText, not pdfText.
+This is generic — works for any number of pages.
+
 ## 6. WORKING STATE CONFIRMED (do not break this!)
 - Auto-detection of L1-L20 positions on page 2 works
   correctly for PLK_W-BO_G-MV_AL

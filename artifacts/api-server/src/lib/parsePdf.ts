@@ -37,10 +37,15 @@ export function matchSchemaName(filename: string): string | null {
 }
 
 export function parseExecutionDescription(pdfText: string): ParsedExecution {
+  // Normalize line endings: pdf-parse inserts \x0c (form feed) between pages,
+  // and some PDFs use \r\n or bare \r.  Convert all of these to plain \n so
+  // the downstream split("\n") sees consistent line boundaries across pages.
+  const cleanText = pdfText.replace(/\r\n/g, "\n").replace(/[\r\x0c]/g, "\n");
+
   // pdf-parse sometimes concatenates multiple records onto one line.
   // Insert a newline before any known section prefix followed by " - "
   // so each record gets its own line before we split.
-  const normalized = pdfText.replace(
+  const normalized = cleanText.replace(
     /[ \t]+(?=(IM|AM|LM|U_QUE|BO\d*|SE\d*|KS\d*|DE\d*) - )/g,
     "\n"
   );
