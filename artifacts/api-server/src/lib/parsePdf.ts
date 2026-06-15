@@ -42,12 +42,22 @@ export function parseExecutionDescription(pdfText: string): ParsedExecution {
   // the downstream split("\n") sees consistent line boundaries across pages.
   const cleanText = pdfText.replace(/\r\n/g, "\n").replace(/[\r\x0c]/g, "\n");
 
-  // pdf-parse sometimes concatenates multiple records onto one line.
-  // Insert a newline before any known section prefix followed by " - "
-  // so each record gets its own line before we split.
+  // pdf-parse sometimes fuses consecutive entries onto the same line,
+  // either via whitespace ("...LEER KS - L03...") or with no separator
+  // at all when a page break falls mid-record ("...12DE - ANO_CODE...").
+  //
+  // Strategy: insert \n before any known section prefix that is NOT
+  // already at the start of a line (i.e. preceded by any non-newline
+  // character).  The lookahead guards against false positives by
+  // requiring the prefix to be followed by " - ".
+  //
+  // Replacement "\n$1" keeps the prefix itself; the character before
+  // the prefix (whitespace or value digit) is NOT consumed and stays
+  // on the previous line where filter(Boolean) will discard it if it
+  // produces an empty / too-short line.
   const normalized = cleanText.replace(
-    /[ \t]+(?=(IM|AM|LM|U_QUE|BO\d*|SE\d*|KS\d*|DE\d*) - )/g,
-    "\n"
+    /(?<=[^\n])(IM|AM|LM|U_QUE|BO\d*|SE\d*|KS\d*|DE\d*)(?= - )/g,
+    "\n$1"
   );
   const lines = normalized
     .split("\n")

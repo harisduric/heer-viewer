@@ -66,18 +66,31 @@ Y-coordinate correction still required:
 where actual_page_height comes from pdfjs-dist viewport at scale=1,
 because detection uses DETECT_PAGE_H=842 as fallback.
 
-## 8. Multi-page execution description PDFs
-pdf-parse v1.1.1 inserts \x0c (form feed) as the page separator.
-Because \x0c is NOT in [ \t], the normalization regex does not split on it.
-Without explicit handling, the first entry of page 2 gets concatenated
-onto the last line of page 1, producing a malformed line that silently
-drops the page-2 entry.
+## 8. Multi-page execution description PDFs — entry concatenation bug
+Root cause (confirmed via debug logging): when a page break falls in the
+middle of a record, pdf-parse fuses the end of one entry directly onto
+the start of the next with NO separator:
 
-Fix (permanent — do not remove): at the very start of parseExecutionDescription(),
-before the normalization regex, normalize ALL line terminators to \n:
+  "DE - L15 - 12DE - ANO_CODE - Z01 - 0"
+
+split(" - ") then yields rawValue = "0" (the last element from the
+fused ANO_CODE record), which the `rawValue === "0"` guard discards →
+L15 silently dropped.
+
+The old normalization regex only handled [ \t]+ before a section prefix.
+It did not catch direct fusion like "12DE".
+
+Fix (permanent — do not remove):
+Step 1 — normalize all line terminators before the regex runs:
   cleanText = pdfText.replace(/\r\n/g, "\n").replace(/[\r\x0c]/g, "\n")
-The normalization regex and split("\n") then run on cleanText, not pdfText.
-This is generic — works for any number of pages.
+
+Step 2 — insert \n before any section prefix that is NOT already at
+the start of a line, using a lookbehind:
+  cleanText.replace(/(?<=[^\n])(IM|AM|LM|U_QUE|BO\d*|SE\d*|KS\d*|DE\d*)(?= - )/g, "\n$1")
+
+This is generic — catches both whitespace-separated and zero-separator
+concatenation, across any number of pages.
+The lookahead (?= - ) prevents false positives inside schema names.
 
 ## 6. WORKING STATE CONFIRMED (do not break this!)
 - Auto-detection of L1-L20 positions on page 2 works
