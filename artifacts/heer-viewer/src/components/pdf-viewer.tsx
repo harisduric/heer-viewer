@@ -14,17 +14,7 @@ interface PdfViewerProps {
   pageNumber?: number;
   scale?: number;
   crop?: { cropX: number; cropY: number; cropW: number; cropH: number } | null;
-  overlays?: {
-    x: number;
-    y: number;
-    label: string;
-    value: string;
-    rotation?: number;
-    /** Advance width of the original L-label glyph in PDF points (from pdfjs item.width). */
-    textWidth?: number;
-    /** Em-square height of the original L-label in PDF points (from font size). */
-    textHeight?: number;
-  }[];
+  overlays?: { x: number; y: number; label: string; value: string; rotation?: number }[];
   interactive?: boolean;
 }
 
@@ -136,9 +126,11 @@ export function PdfViewer({
         overlayContext.clearRect(0, 0, pdfCanvas.width, pdfCanvas.height);
         overlayContext.textBaseline = "middle";
 
-        const PAD = 6;
-        const FONT_NORMAL = 13;
-        const FONT_SMALL = 11;
+        const FONT = 11;
+        const PAD = 3;   // padding inside the value's background highlight
+        const GAP = 8;   // canvas px gap between Lx anchor and drawn value text
+
+        overlayContext.font = `bold ${FONT}px Inter, sans-serif`;
 
         // ── Pre-compute canvas positions for all valid overlays ──────────────
         const items = overlays
@@ -150,96 +142,55 @@ export function PdfViewer({
             return { overlay, rawCx, rawCy };
           });
 
-        // ── Cluster detection: count how many other labels are within radius ──
-        // If 2+ neighbours → use smaller font to give breathing room.
-        const CLUSTER_RADIUS = 55; // canvas pixels
-        const fontSizes = items.map((item, i) => {
-          const neighbours = items.filter(
-            (other, j) =>
-              j !== i &&
-              Math.hypot(item.rawCx - other.rawCx, item.rawCy - other.rawCy) < CLUSTER_RADIUS
-          ).length;
-          return neighbours >= 2 ? FONT_SMALL : FONT_NORMAL;
-        });
+        // ── Draw value labels next to their Lx anchor ───────────────────────
+        // The original Lx text on the PDF is left completely untouched.
+        // Horizontal labels (rotation=0): value drawn to the right of the anchor.
+        // Rotated labels (rotation≠0, typically 90°): value drawn below the anchor.
+        // Light-grey background sized only to the value text; no cover rectangles.
+        //
+        // Collision detection: skip any value box that overlaps an already-drawn one
+        // so tight clusters (L2/L3/L4 etc.) stay readable.
 
-        // ── Draw overlays with collision detection ──────────────────────────
-        // Track bounding boxes of already-drawn overlays.
-        // Skip any new overlay that overlaps >30% with an existing one.
+        const HALF_H = Math.ceil(FONT / 2) + PAD;
         const drawnBoxes: { x: number; y: number; w: number; h: number }[] = [];
 
         function hasCollision(box: { x: number; y: number; w: number; h: number }): boolean {
           for (const b of drawnBoxes) {
-            const ix = Math.max(
-              0,
-              Math.min(b.x + b.w, box.x + box.w) - Math.max(b.x, box.x)
-            );
-            const iy = Math.max(
-              0,
-              Math.min(b.y + b.h, box.y + box.h) - Math.max(b.y, box.y)
-            );
-            const interArea = ix * iy;
-            const minArea = Math.min(b.w * b.h, box.w * box.h);
-            if (minArea > 0 && interArea / minArea > 0.3) return true;
+            const overlapX = Math.min(b.x + b.w, box.x + box.w) - Math.max(b.x, box.x);
+            const overlapY = Math.min(b.y + b.h, box.y + box.h) - Math.max(b.y, box.y);
+            if (overlapX > 0 && overlapY > 0) return true;
           }
           return false;
         }
 
-        for (let i = 0; i < items.length; i++) {
-          const { overlay, rawCx, rawCy } = items[i];
-          const fontSize = fontSizes[i];
-          const HALF_H = Math.ceil(fontSize / 2) + PAD;
-
-          overlayContext.font = `bold ${fontSize}px Inter, sans-serif`;
+        for (const { overlay, rawCx, rawCy } of items) {
           const text = overlay.value;
           const tw = overlayContext.measureText(text).width;
+          const isRotated = !!overlay.rotation;
 
-          // Clamp so text never renders outside the visible canvas
-          const cx = Math.max(PAD, Math.min(rawCx, pdfCanvas.width - tw - PAD));
-          const cy = Math.max(HALF_H, Math.min(rawCy, pdfCanvas.height - HALF_H));
-
-          const box = {
-            x: cx - PAD,
-            y: cy - HALF_H,
-            w: tw + PAD * 2,
-            h: fontSize + PAD * 2,
-          };
-
-          // Skip if this box overlaps >30% with any already-drawn box
-          if (hasCollision(box)) continue;
-
-          drawnBoxes.push(box);
-
-          // ── Rotated cover for original L-label ──────────────────────────────
-          // When the stored label has a non-zero rotation (90° CCW, -90° CW, etc.),
-          // the axis-aligned cover below won't fully hide the rotated glyphs.
-          // Draw a cover rect rotated to match the original text angle, sized to
-          // exactly the glyph's own advance-width × em-height + 2px pad only.
-          // This keeps the cover tight so it doesn't bleed onto adjacent red lines.
-          if (overlay.rotation && overlay.textWidth && overlay.textHeight) {
-            const rotRad = overlay.rotation * (Math.PI / 180);
-            const COVER_PAD = 2; // px — just enough to fully hide anti-aliased edges
-            const twPx = overlay.textWidth * zoom;  // glyph advance width in canvas px
-            const thPx = overlay.textHeight * zoom; // em-square height in canvas px
-            overlayContext.save();
-            overlayContext.translate(rawCx, rawCy);
-            overlayContext.rotate(rotRad);
-            overlayContext.fillStyle = "rgba(255,255,255,0.97)";
-            // Origin is at the baseline-left corner of the original glyph.
-            // x: from -COVER_PAD (before start) to twPx + COVER_PAD (after end).
-            // y: from -(thPx + COVER_PAD) (above baseline) to +COVER_PAD (below).
-            overlayContext.fillRect(
-              -COVER_PAD,
-              -(thPx + COVER_PAD),
-              twPx + 2 * COVER_PAD,
-              thPx + 2 * COVER_PAD
-            );
-            overlayContext.restore();
+          // Candidate position: right of anchor for horizontal, below for rotated
+          let vx: number;
+          let vy: number;
+          if (isRotated) {
+            vx = rawCx;
+            vy = rawCy + GAP + HALF_H;
+          } else {
+            vx = rawCx + GAP;
+            vy = rawCy;
           }
 
-          overlayContext.fillStyle = "rgba(255,255,255,0.92)";
+          // Clamp so value never renders outside the visible canvas
+          vx = Math.max(PAD, Math.min(vx, pdfCanvas.width - tw - PAD));
+          vy = Math.max(HALF_H, Math.min(vy, pdfCanvas.height - HALF_H));
+
+          const box = { x: vx - PAD, y: vy - HALF_H, w: tw + PAD * 2, h: FONT + PAD * 2 };
+          if (hasCollision(box)) continue;
+          drawnBoxes.push(box);
+
+          overlayContext.fillStyle = "rgba(230,235,240,0.88)";
           overlayContext.fillRect(box.x, box.y, box.w, box.h);
           overlayContext.fillStyle = "#4A5568";
-          overlayContext.fillText(text, cx, cy);
+          overlayContext.fillText(text, vx, vy);
         }
 
         if (active) setLoading(false);

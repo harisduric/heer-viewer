@@ -3,4 +3,4 @@
 - [pdf-parse in ESM server](pdf-parse-esm.md) — pdf-parse is CJS; must use createRequire(import.meta.url) to require it in the ESM api-server bundle.
 - [detectLabels pageH bug](detect-labels-pageh.md) — vp.height is undefined in pdf-parse's bundled pdfjs; guard with Number.isFinite or pageH stays at default 842, making y = undefined - t[5] = NaN.
 - [Label detection coordinate system](label-detection-coords.md) — crops stored in pdfjs-space (Y from top, 0–595); detection stores Y=842−PDF_y; convert before crop comparison: detY = cropY + (842 − (maxCropBottom+20)).
-- [Rotated label cover sizing](rotated-label-cover.md) — use item.width (pdfjs advance width, PDF pts) as textWidth and Math.hypot(t[0],t[1]) as textHeight; scale by zoom + 2px COVER_PAD only. Fixed-size guesses bleed onto adjacent dimension lines.
+- [Overlay rendering approach](overlay-rendering.md) — values placed NEXT TO Lx anchors (right for horizontal, below for rotated); no cover rects. Covering attempts caused bleed onto red dimension lines.

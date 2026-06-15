@@ -1,0 +1,50 @@
+Please check FIXES.md before making any changes.
+
+CONTEXT: The last two changes (rotated cover boxes, then exact 
+textWidth/textHeight covers) made the overlay rendering progressively 
+worse - original "Lx" labels still show through (e.g. "L1" partially 
+visible as "| 1" next to "1'062"), and the layout looks broken/messy.
+
+STEP 1 - CLEAN REMOVAL:
+In pdf-viewer.tsx, remove ALL white cover-rectangle drawing logic 
+entirely - this includes the original axis-aligned cover from before 
+the rotation fix, the rotated cover added afterwards, AND the 
+textWidth/textHeight-based cover from the most recent change. After 
+this step, the canvas should render the PDF page completely unmodified 
+(no covers, no rotation logic) - only the value text overlays remain 
+to be repositioned in step 2.
+
+STEP 2 - NEW APPROACH (values next to labels, no covering):
+Render each dimension VALUE (e.g. "1'062", "626", "100") as a small 
+text label positioned immediately next to its corresponding "Lx" 
+anchor point on the canvas - the original "Lx" text stays fully 
+visible, untouched.
+- Positioning: for labels with rotation=90 (from detectLabels.ts), 
+  place the value text directly below the "Lx" label; for 
+  rotation=0/undefined, place it directly to the right.
+- Style: bold, color #4A5568, font-size 11px, small light-grey 
+  background highlight sized only to the value text itself (not 
+  covering "Lx").
+- Keep this fully generic (rotation/anchor-based, no hardcoded 
+  per-schema positions).
+
+STEP 3 - CLEANUP:
+Remove now-unused textWidth/textHeight fields and any dead code from 
+detectLabels.ts and viewer.tsx related to the removed cover logic. 
+Keep "rotation" field, it's still needed for value positioning.
+
+STEP 4 - UPDATE FIXES.md:
+Replace all cover/rotation-cover sections with a single section 
+describing this "value next to label, no covering" approach as the 
+CONFIRMED approach.
+
+VERIFICATION:
+- pnpm --filter @workspace/heer-viewer run typecheck must stay clean
+- Test Steps BO, SE, KS, DE with PLK_W-BO_G-MV_AL execution description:
+  - Original "Lx" labels remain fully visible and untouched
+  - Values appear cleanly next to/below their label, not overlapping 
+    red dimension lines/numbers
+  - In tight clusters (e.g. L2/L3/L4 area) values don't overlap each 
+    other
+- Do NOT mark as done before a visual check - report that manual 
+  browser verification is needed.

@@ -18,6 +18,7 @@ When a schema PDF is uploaded to Bibliothek:
 - Find all labels matching /^L\d+$/ (L1-L20)
 - Assign each label to nearest section header
 - Save BOTH x AND y coordinates to database
+- Also save rotation (degrees from atan2(t[1],t[0])) when non-zero
 - This runs automatically on every upload
 - No manual label positioning needed
 
@@ -29,17 +30,25 @@ The Koordinaten editor only has:
 - Seite 2 — Crop-Editor (BO/SE/KS/DE regions)
 - Seite 3 — KS/SE/DE (ANO_CODE crops)
 
-## 5. Overlay Rendering in Viewer
-Dimension values are overlaid on the PDF canvas
-at the auto-detected L1/L20 coordinates.
-Color: #4A5568, font: bold 13px Inter.
-White background rectangle behind each value (6px padding).
-Padding must be large enough to fully cover the original
-L-label text and any adjacent small dimension numbers.
-Coordinates are scaled by current render scale.
-Y coordinates must be corrected for the pageH detection fallback:
+## 5. Overlay Rendering in Viewer — VALUE NEXT TO LABEL (confirmed approach)
+Dimension values are drawn NEXT TO their Lx anchor on the overlay canvas.
+The original Lx text in the PDF is left completely untouched — no covering.
+
+Positioning rules (generic, no per-schema hardcoding):
+- rotation=0 or undefined → value drawn to the RIGHT of the anchor point
+- rotation≠0 (typically 90°) → value drawn BELOW the anchor point
+- Gap between anchor and value: 8 canvas px
+- Clamped so value never renders outside the canvas bounds
+
+Style:
+- Font: bold 11px Inter, color #4A5568
+- Background: rgba(230,235,240,0.88) tight behind value text only (3px pad)
+- Collision detection: if two value boxes overlap, the later one is skipped
+
+Y-coordinate correction still required:
   correctedY = stored_y + (actual_page_height - 842)
-where actual_page_height comes from pdfjs-dist viewport at scale=1.
+where actual_page_height comes from pdfjs-dist viewport at scale=1,
+because detection uses DETECT_PAGE_H=842 as fallback.
 
 ## 6. WORKING STATE CONFIRMED (do not break this!)
 - Auto-detection of L1-L20 positions on page 2 works
@@ -55,11 +64,10 @@ where actual_page_height comes from pdfjs-dist viewport at scale=1.
   PLK_W-BO_G-MV_AL execution description and confirm
   the dimension table still shows correct values.
 
-## 7. CONFIRMED WORKING: Overlay replaces L-labels
-CONFIRMED WORKING: Dimension overlay correctly replaces
-L-labels with execution description values for
-PLK_W-BO_G-MV_AL across all 5 steps (Übersicht, BO,
-SE, KS, DE). Any future change to detectLabels.ts,
-pdf-viewer.tsx overlay rendering, or coordinate storage
-MUST be re-tested against this schema before being
+## 7. CONFIRMED APPROACH: Values placed next to Lx labels
+The dimension overlay places each value TEXT next to (not replacing)
+its Lx anchor point. Original Lx labels remain visible on the PDF.
+Values appear to the right (horizontal labels) or below (rotated labels).
+Any future change to pdf-viewer.tsx overlay rendering or coordinate
+storage MUST be re-tested against PLK_W-BO_G-MV_AL before being
 considered complete.
