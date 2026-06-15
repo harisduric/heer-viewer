@@ -33,14 +33,17 @@ export default function ViewerPage() {
   const [panelOpen, setPanelOpen] = useState(true);
   const [highlightedLabel, setHighlightedLabel] = useState<string | null>(null);
 
-  // Measure the PDF area width so we can scale crop to fill it
+  // Measure the PDF area so we can scale each crop to fit both dimensions.
   const pdfAreaRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(900);
+  const [containerHeight, setContainerHeight] = useState(600);
   useEffect(() => {
     const el = pdfAreaRef.current;
     if (!el) return;
     const ro = new ResizeObserver((entries) => {
-      setContainerWidth(entries[0].contentRect.width);
+      const { width, height } = entries[0].contentRect;
+      setContainerWidth(width);
+      setContainerHeight(height);
     });
     ro.observe(el);
     return () => ro.disconnect();
@@ -226,16 +229,19 @@ export default function ViewerPage() {
               </div>
             ) : (
               // Single view for all other steps (and Hebegurt with only one ANO_CODE)
-              // Scale: fill container width with the crop section so details are legible.
-              // Use at least 1.5 as a floor, and re-compute whenever container resizes.
+              // Scale: fit the crop entirely within the available container area on both
+              // axes — min(containerWidth/cropW, containerHeight/cropH).  This gives a
+              // "fit to page" result for both landscape (BO/SE/DE) and portrait (KS) crops.
               <PdfViewer
                 url={pdfUrl}
                 pageNumber={1}
                 scale={(() => {
                   const activeCrop = step === 5 && anoCrops.length === 1 ? anoCrops[0].crop : crop;
-                  return activeCrop && containerWidth > 50
-                    ? Math.max(1.5, containerWidth / activeCrop.cropW)
-                    : 1.5;
+                  if (!activeCrop || containerWidth <= 50 || containerHeight <= 50) return 1.5;
+                  return Math.min(
+                    containerWidth / activeCrop.cropW,
+                    containerHeight / activeCrop.cropH,
+                  );
                 })()}
                 crop={step === 5 && anoCrops.length === 1 ? anoCrops[0].crop : crop}
                 overlays={overlays}

@@ -231,7 +231,7 @@ export function PdfViewer({
   return (
     <div
       ref={containerRef}
-      className={`relative overflow-auto w-full h-full flex flex-col items-center bg-gray-100 ${
+      className={`relative overflow-auto w-full h-full flex items-center justify-center bg-gray-100 ${
         interactive ? "cursor-grab active:cursor-grabbing touch-none" : ""
       }`}
       onDoubleClick={resetView}

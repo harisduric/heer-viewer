@@ -1,0 +1,42 @@
+Please check FIXES.md (especially the FIX 1 ResizeObserver scaling 
+logic) before making any changes.
+
+PROBLEM:
+Currently the viewer scales each crop (BO/SE/KS/DE) based only on 
+container WIDTH (scale = containerWidth / crop.cropW). This works fine 
+for landscape-oriented crops (BO, SE, DE), but for the portrait-oriented 
+KS crop it results in a poor "fit" - either a lot of empty whitespace 
+around the drawing, or the drawing overflowing vertically with extra 
+scrolling, depending on current height constraints.
+
+GOAL:
+The viewer should behave like a "fit to page" print preview: for each 
+step (Übersicht/BO/SE/KS/DE), the crop should be scaled to fit ENTIRELY 
+within the available container area (both width AND height), 
+maximizing size without overflow and without excessive empty 
+whitespace - regardless of whether the crop is landscape or portrait.
+
+TASK:
+In viewer.tsx (where the ResizeObserver-based scale is computed):
+- Compute scale as the MINIMUM of (containerWidth / crop.cropW) and 
+  (containerHeight / crop.cropH), so the crop fits fully inside the 
+  container on both axes.
+- Center the resulting (scaled) drawing horizontally and vertically 
+  within the container if it doesn't exactly fill both dimensions.
+- This must apply consistently to all steps (Übersicht, BO, SE, KS, 
+  DE) - landscape AND portrait crops should both end up appropriately 
+  sized, filling the available space as much as possible without 
+  cutting anything off.
+- Keep existing pan/zoom interaction (mouse wheel, drag) working on 
+  top of this base "fit" scale.
+
+VERIFICATION:
+- pnpm --filter @workspace/heer-viewer run typecheck must stay clean
+- Test all 5 steps (Übersicht, BO, SE, KS, DE) with 
+  PLK_W-BO_G-MV_AL execution description loaded:
+  - KS (portrait) now fills the available container nicely, no large 
+    empty margins, nothing cut off
+  - BO/SE/DE (landscape) remain well-sized as before, no regression
+  - Manual zoom/pan still works
+- Do NOT mark as done before a visual check - report that manual 
+  browser verification is needed.

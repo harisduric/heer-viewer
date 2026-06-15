@@ -92,6 +92,21 @@ This is generic — catches both whitespace-separated and zero-separator
 concatenation, across any number of pages.
 The lookahead (?= - ) prevents false positives inside schema names.
 
+## 9. Viewer crop scaling — "fit to page" (all steps)
+Scale = min(containerWidth / cropW, containerHeight / cropH).
+This fills the available area in both dimensions without overflow,
+handling both landscape (BO/SE/DE) and portrait (KS) crops correctly.
+
+Measured by ResizeObserver on pdfAreaRef in viewer.tsx.
+Tracked in two state vars: containerWidth and containerHeight (both updated together in the same observer callback).
+Fallback: if crop is null or either dimension < 50px → scale = 1.5.
+
+Centering: PdfViewer outer container uses flex items-center justify-center
+(both axes). At base fit-scale the canvas is ≤ container, so centering
+works cleanly. At user-zoomed scale, pan gesture handles navigation via
+transform: translate(pan.x, pan.y) — CSS centering breakdown at high
+zoom is not a problem.
+
 ## 6. WORKING STATE CONFIRMED (do not break this!)
 - Auto-detection of L1-L20 positions on page 2 works
   correctly for PLK_W-BO_G-MV_AL
