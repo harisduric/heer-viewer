@@ -12,6 +12,7 @@ export * from './coordinatesInput';
 export * from './errorResponse';
 export * from './executionUpload';
 export * from './healthStatus';
+export * from './pageCount';
 export * from './parsedExecution';
 export * from './parsedExecutionGlobalDimensions';
 export * from './parsedExecutionSections';

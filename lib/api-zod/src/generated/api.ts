@@ -59,6 +59,18 @@ export const GetSchemaPageParams = zod.object({
 
 
 /**
+ * @summary Get total page count of a schema PDF
+ */
+export const GetSchemaPageCountParams = zod.object({
+  "name": zod.coerce.string()
+})
+
+export const GetSchemaPageCountResponse = zod.object({
+  "numPages": zod.number()
+})
+
+
+/**
  * @summary Upload a schema drawing PDF to a slot
  */
 export const UploadSchemaParams = zod.object({

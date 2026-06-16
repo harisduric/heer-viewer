@@ -21,8 +21,8 @@ router.get(
     const name = req.params["name"] as string;
     const pageNum = parseInt(req.params["num"] as string, 10);
 
-    if (isNaN(pageNum) || pageNum < 1 || pageNum > 10) {
-      res.status(400).json({ error: "Invalid page number (must be 1–10)" });
+    if (isNaN(pageNum) || pageNum < 1 || pageNum > 200) {
+      res.status(400).json({ error: "Invalid page number (must be 1–200)" });
       return;
     }
 
@@ -100,6 +100,64 @@ router.get(
     res.setHeader("Content-Length", singlePageBytes.length);
     res.setHeader("Cache-Control", "private, max-age=3600");
     res.send(Buffer.from(singlePageBytes));
+  }
+);
+
+router.get(
+  "/schema/:name/pagecount",
+  async (req, res): Promise<void> => {
+    const name = req.params["name"] as string;
+
+    const [row] = await db
+      .select()
+      .from(schemasTable)
+      .where(eq(schemasTable.name, name))
+      .limit(1);
+
+    if (!row || !row.object_path) {
+      res.status(404).json({ error: "Schema or PDF not found" });
+      return;
+    }
+
+    let stream;
+    try {
+      stream = await streamSchemaPdf(row.object_path);
+    } catch (err) {
+      req.log.error({ err }, "Failed to stream PDF for pagecount");
+      res.status(500).json({ error: "Failed to retrieve PDF" });
+      return;
+    }
+
+    if (!stream) {
+      res.status(404).json({ error: "PDF not found in storage" });
+      return;
+    }
+
+    const chunks: Buffer[] = [];
+    try {
+      await new Promise<void>((resolve, reject) => {
+        stream!.on("data", (chunk: Buffer) => chunks.push(chunk));
+        stream!.on("end", resolve);
+        stream!.on("error", reject);
+      });
+    } catch (err) {
+      req.log.error({ err }, "Error buffering PDF for pagecount");
+      if (!res.headersSent) res.status(500).json({ error: "Stream error" });
+      return;
+    }
+
+    let numPages: number;
+    try {
+      const fullDoc = await PDFDocument.load(Buffer.concat(chunks));
+      numPages = fullDoc.getPageCount();
+    } catch (err) {
+      req.log.error({ err }, "Failed to parse PDF for pagecount");
+      res.status(500).json({ error: "Failed to parse PDF" });
+      return;
+    }
+
+    req.log.info({ name, numPages }, "Page count requested");
+    res.json({ numPages });
   }
 );
 

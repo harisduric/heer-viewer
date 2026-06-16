@@ -25,6 +25,7 @@ import type {
   ErrorResponse,
   ExecutionUpload,
   HealthStatus,
+  PageCount,
   ParsedExecution,
   SchemaSlot,
   SchemaUpload
@@ -340,6 +341,83 @@ export function useGetSchemaPage<TData = Awaited<ReturnType<typeof getSchemaPage
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetSchemaPageQueryOptions(name,num,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetSchemaPageCountUrl = (name: string,) => {
+
+
+
+
+  return `/api/schema/${name}/pagecount`
+}
+
+/**
+ * @summary Get total page count of a schema PDF
+ */
+export const getSchemaPageCount = async (name: string, options?: RequestInit): Promise<PageCount> => {
+
+  return customFetch<PageCount>(getGetSchemaPageCountUrl(name),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetSchemaPageCountQueryKey = (name: string,) => {
+    return [
+    `/api/schema/${name}/pagecount`
+    ] as const;
+    }
+
+
+export const getGetSchemaPageCountQueryOptions = <TData = Awaited<ReturnType<typeof getSchemaPageCount>>, TError = ErrorType<ErrorResponse>>(name: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSchemaPageCount>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetSchemaPageCountQueryKey(name);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSchemaPageCount>>> = ({ signal }) => getSchemaPageCount(name, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(name), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSchemaPageCount>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetSchemaPageCountQueryResult = NonNullable<Awaited<ReturnType<typeof getSchemaPageCount>>>
+export type GetSchemaPageCountQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Get total page count of a schema PDF
+ */
+
+export function useGetSchemaPageCount<TData = Awaited<ReturnType<typeof getSchemaPageCount>>, TError = ErrorType<ErrorResponse>>(
+ name: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSchemaPageCount>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetSchemaPageCountQueryOptions(name,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

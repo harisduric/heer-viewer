@@ -1,6 +1,2 @@
-- [pdfjs-dist v5 render API](pdfjs-v5-render.md) — page.render() requires explicit `canvas: HTMLCanvasElement` alongside canvasContext; omitting it causes TS2345.
-- [api-client-react barrel imports](api-client-react-imports.md) — always import types/hooks from `@workspace/api-client-react`, never from the deep src/generated path.
-- [pdf-parse in ESM server](pdf-parse-esm.md) — pdf-parse is CJS; must use createRequire(import.meta.url) to require it in the ESM api-server bundle.
-- [detectLabels pageH bug](detect-labels-pageh.md) — vp.height is undefined in pdf-parse's bundled pdfjs; guard with Number.isFinite or pageH stays at default 842, making y = undefined - t[5] = NaN.
-- [Label detection coordinate system](label-detection-coords.md) — crops stored in pdfjs-space (Y from top, 0–595); detection stores Y=842−PDF_y; convert before crop comparison: detY = cropY + (842 − (maxCropBottom+20)).
-- [Overlay rendering approach](overlay-rendering.md) — values placed NEXT TO Lx anchors (right for horizontal, below for rotated); no cover rects. Covering attempts caused bleed onto red dimension lines.
+- [Generated hook queryKey requirement](generated-hook-querykey.md) — Orval-generated hooks require explicit `queryKey` in query options or TS errors on `enabled`-only objects.
+- [Schema page route upper limit](schema-page-limit.md) — `/api/schema/:name/page/:num` had a hard cap at page 10; raised to 200 for Hebegurt multi-page support.

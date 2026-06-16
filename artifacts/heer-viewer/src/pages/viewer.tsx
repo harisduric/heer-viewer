@@ -4,11 +4,13 @@ import { useLocation } from "wouter";
 import { useAppStore } from "../store";
 import { Layout } from "../components/layout";
 import { Button } from "@/components/ui/button";
-import { ChevronLeft, ChevronRight, PanelRight, PanelRightClose, Printer } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2, PanelRight, PanelRightClose, Printer } from "lucide-react";
 import {
   useGetCoordinates,
   useGetSchemaLibrary,
+  useGetSchemaPageCount,
   getGetCoordinatesQueryKey,
+  getGetSchemaPageCountQueryKey,
   getGetSchemaPageUrl,
 } from "@workspace/api-client-react";
 import { PdfViewer } from "../components/pdf-viewer";
@@ -22,7 +24,7 @@ const STEP_NAMES: Record<number, string> = {
   2: "SE",
   3: "KS",
   4: "DE",
-  5: "Hebegurt",
+  5: "Hebegurte",
 };
 
 type CropRect = { cropX: number; cropY: number; cropW: number; cropH: number };
@@ -35,11 +37,15 @@ export default function ViewerPage() {
   const [highlightedLabel, setHighlightedLabel] = useState<string | null>(null);
   // Capture state — ref avoids stale-closure issues across sequential renders.
   const captureQueueRef = useRef<{
-    step: 0 | 1 | 2 | 3 | 4;
+    phase: "main" | "hebegurt";
+    mainStep: 0 | 1 | 2 | 3 | 4;
+    hebegurtIdx: number;
+    hebegurtPageNums: number[];
     images: string[];
     originalStep: number;
   } | null>(null);
   const [isCapturing, setIsCapturing] = useState(false);
+  const [hebegurtCaptureTick, setHebegurtCaptureTick] = useState(0);
   const [printImages, setPrintImages] = useState<string[] | null>(null);
 
   // Measure the PDF area so we can scale each crop to fit both dimensions.
@@ -58,25 +64,40 @@ export default function ViewerPage() {
     return () => ro.disconnect();
   }, []);
 
-  // Called by the main PdfViewer after each section finishes rendering.
-  // Advances Übersicht(0) → BO(1) → SE(2) → KS(3) → DE(4) by mutating
-  // captureQueueRef, then calls window.print() once all 5 images are collected.
-  // Wrapped in useCallback so the reference is stable — PdfViewer now lists
-  // onRendered as a dep, meaning any change from undefined → function triggers
-  // a re-capture (needed when the user starts print while already on step 0).
+  // Advances capture through steps 0–4 (main phase) then Hebegurt pages (hebegurt phase).
+  // Wrapped in useCallback so the reference is stable — PdfViewer lists onRendered as a dep.
   const handlePrintRendered = useCallback((dataUrl: string) => {
     const q = captureQueueRef.current;
     if (!q) return;
     q.images.push(dataUrl);
-    if (q.step < 4) {
-      q.step = (q.step + 1) as 1 | 2 | 3 | 4;
-      setStep(q.step);
+
+    if (q.phase === "main") {
+      if (q.mainStep < 4) {
+        q.mainStep = (q.mainStep + 1) as 1 | 2 | 3 | 4;
+        setStep(q.mainStep);
+      } else if (q.hebegurtPageNums.length > 0) {
+        // Transition to Hebegurt capture phase
+        q.phase = "hebegurt";
+        q.hebegurtIdx = 0;
+        setStep(5);
+      } else {
+        captureQueueRef.current = null;
+        setIsCapturing(false);
+        setPrintImages([...q.images]);
+        setStep(q.originalStep);
+      }
     } else {
-      captureQueueRef.current = null;
-      setIsCapturing(false);
-      const imgs = [...q.images];
-      setStep(q.originalStep);
-      setPrintImages(imgs);
+      // Hebegurt phase — advance to next page or finish
+      q.hebegurtIdx++;
+      if (q.hebegurtIdx < q.hebegurtPageNums.length) {
+        // Trigger re-render so PdfViewer gets the next page URL
+        setHebegurtCaptureTick((t) => t + 1);
+      } else {
+        captureQueueRef.current = null;
+        setIsCapturing(false);
+        setPrintImages([...q.images]);
+        setStep(q.originalStep);
+      }
     }
   }, []); // stable — only reads from ref, calls stable React setters
 
@@ -84,7 +105,7 @@ export default function ViewerPage() {
   // The portal renders the images first (before this effect runs) because
   // React commits DOM changes before firing effects.
   useEffect(() => {
-    if (printImages === null || printImages.length < 5) return;
+    if (!printImages || printImages.length === 0) return;
     window.print();
     const cleanup = () => setPrintImages(null);
     window.addEventListener("afterprint", cleanup, { once: true });
@@ -102,8 +123,40 @@ export default function ViewerPage() {
   });
 
   const coords = coordData as Record<string, unknown> | undefined;
-  const hasHebegurt = (parsedExecution?.anoCodes ?? []).length > 0;
+
+  // Active ANO_CODEs — value "0" = not applicable (filtered out)
+  const activeAnoCodes = (parsedExecution?.anoCodes ?? []).filter(
+    (ac) => ac.value !== "0",
+  );
+
+  // Hebegurt start page from schema coordinates (null if not configured)
+  const hebegurtStartPage =
+    typeof coords?.["hebegurtStartPage"] === "number"
+      ? (coords["hebegurtStartPage"] as number)
+      : null;
+
+  // Hebegurt step appears when execution has active ANO_CODEs AND schema has a start page
+  const hasHebegurt = activeAnoCodes.length > 0 && !!hebegurtStartPage;
+
   const totalSteps = hasHebegurt ? 6 : 5;
+
+  // Fetch total page count so we know which pages to show in the Hebegurt step
+  const { data: pageCountData } = useGetSchemaPageCount(schemaName ?? "", {
+    query: {
+      enabled: hasHebegurt && !!schemaName,
+      queryKey: getGetSchemaPageCountQueryKey(schemaName ?? ""),
+    },
+  });
+  const numPages = pageCountData?.numPages ?? null;
+
+  // PDF page numbers for the Hebegurt step (hebegurtStartPage … numPages)
+  const hebegurtPageNums: number[] =
+    hebegurtStartPage !== null && numPages !== null
+      ? Array.from(
+          { length: numPages - hebegurtStartPage + 1 },
+          (_, i) => hebegurtStartPage + i,
+        )
+      : [];
 
   useEffect(() => {
     setHighlightedLabel(null);
@@ -136,13 +189,22 @@ export default function ViewerPage() {
   const pdfPageNum = step === 0 ? 1 : step >= 1 && step <= 4 ? 2 : 3;
   const pdfUrl = getGetSchemaPageUrl(schemaName, pdfPageNum);
 
+  // URL for the current Hebegurt page during capture (changes with hebegurtCaptureTick).
+  // hebegurtCaptureTick >= 0 is always true but establishes the reactivity dependency.
+  const captureHebegurtUrl =
+    isCapturing &&
+    captureQueueRef.current?.phase === "hebegurt" &&
+    hebegurtCaptureTick >= 0
+      ? getGetSchemaPageUrl(
+          schemaName,
+          captureQueueRef.current.hebegurtPageNums[captureQueueRef.current.hebegurtIdx],
+        )
+      : null;
+
   // --- Compute overlays / crops for the current step ---
 
   let crop: CropRect | null = null;
   let overlays: { x: number; y: number; label: string; value: string; rotation?: number }[] = [];
-
-  // Hebegurt: collect ALL active ANO_CODE crops with labels for multi-view
-  let anoCrops: { label: string; crop: CropRect }[] = [];
 
   if (step === 0) {
     // Übersicht (page 1): the drawing already contains full written-out labels
@@ -186,21 +248,6 @@ export default function ViewerPage() {
       return positions.map((pos) => ({ label, value: val, x: pos.x, y: pos.y, rotation: pos.rotation, textWidth: pos.textWidth }));
     });
     overlays = highlightedLabel ? all.filter((o) => o.label === highlightedLabel) : all;
-  } else if (step === 5) {
-    const anoCodes = parsedExecution.anoCodes ?? [];
-    const p3 = (coords as Record<string, unknown> | undefined)?.["page3"] as
-      | Record<string, Record<string, CropRect>>
-      | undefined;
-    // Collect ALL active ANO_CODE crops, labelled "SECTION — ANO_CODE VALUE"
-    anoCrops = anoCodes
-      .map((ac) => {
-        const secMap = p3?.[ac.section as string];
-        const c = secMap?.[ac.value as string];
-        return c ? { label: `${ac.section} — ANO_CODE ${ac.value}`, crop: c } : null;
-      })
-      .filter((v): v is NonNullable<typeof v> => v !== null);
-    // For the single-crop path (first one) used as fallback
-    if (anoCrops.length > 0) crop = anoCrops[0].crop;
   }
 
   const currentDims: Record<string, string> =
@@ -241,7 +288,14 @@ export default function ViewerPage() {
               variant="outline"
               size="sm"
               onClick={() => {
-                captureQueueRef.current = { step: 0, images: [], originalStep: step };
+                captureQueueRef.current = {
+                  phase: "main",
+                  mainStep: 0,
+                  hebegurtIdx: 0,
+                  hebegurtPageNums: hasHebegurt ? [...hebegurtPageNums] : [],
+                  images: [],
+                  originalStep: step,
+                };
                 setIsCapturing(true);
                 setStep(0);
               }}
@@ -261,46 +315,50 @@ export default function ViewerPage() {
         <div className="flex flex-1 overflow-hidden">
           {/* PDF Viewer area */}
           <div ref={pdfAreaRef} className="flex-1 overflow-hidden">
-            {step === 5 && anoCrops.length > 1 ? (
-              // Multi-ANO Hebegurt: show all crops stacked vertically with labels
-              <div className="h-full overflow-auto bg-gray-100 p-4 flex flex-col gap-6 items-center">
-                {anoCrops.map(({ label, crop: aCrop }) => (
-                  <div key={label} className="flex flex-col items-center gap-2 w-full max-w-2xl">
-                    <div className="px-3 py-1 rounded-lg bg-[#EEF3C7] text-[#2D3748] font-semibold text-sm self-start">
-                      {label}
+            {step === 5 ? (
+              isCapturing && captureHebegurtUrl ? (
+                // Capture mode: sequential single-page PdfViewer (one per Hebegurt page)
+                <PdfViewer
+                  url={captureHebegurtUrl}
+                  pageNumber={1}
+                  scale={1.5}
+                  interactive={false}
+                  onRendered={handlePrintRendered}
+                />
+              ) : (
+                // Normal view: continuous scroll through all Hebegurt pages
+                <div className="h-full overflow-y-auto bg-gray-100 p-4 flex flex-col items-center gap-4">
+                  {hebegurtPageNums.length === 0 ? (
+                    <div className="flex items-center justify-center h-full">
+                      <Loader2 className="w-8 h-8 animate-spin text-[#B8CC5A]" />
                     </div>
-                    <div
-                      className="w-full shadow-lg rounded"
-                      style={{ height: `${aCrop.cropH * 1.5}px`, minHeight: 120 }}
-                    >
-                      <PdfViewer
-                        url={pdfUrl}
-                        pageNumber={1}
-                        scale={1.5}
-                        crop={aCrop}
-                        interactive={true}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  ) : (
+                    hebegurtPageNums.map((pNum) => (
+                      <div key={pNum} className="w-full flex flex-col items-center">
+                        <PdfViewer
+                          url={getGetSchemaPageUrl(schemaName, pNum)}
+                          pageNumber={1}
+                          scale={Math.min(1.8, Math.max(0.5, (containerWidth - 32) / 595))}
+                          interactive={false}
+                        />
+                      </div>
+                    ))
+                  )}
+                </div>
+              )
             ) : (
-              // Single view for all other steps (and Hebegurt with only one ANO_CODE)
-              // Scale: fit the crop entirely within the available container area on both
-              // axes — min(containerWidth/cropW, containerHeight/cropH).  This gives a
-              // "fit to page" result for both landscape (BO/SE/DE) and portrait (KS) crops.
+              // Steps 0–4: single PdfViewer fitted to container
               <PdfViewer
                 url={pdfUrl}
                 pageNumber={1}
                 scale={(() => {
-                  const activeCrop = step === 5 && anoCrops.length === 1 ? anoCrops[0].crop : crop;
-                  if (!activeCrop || containerWidth <= 50 || containerHeight <= 50) return 1.5;
+                  if (!crop || containerWidth <= 50 || containerHeight <= 50) return 1.5;
                   return Math.min(
-                    containerWidth / activeCrop.cropW,
-                    containerHeight / activeCrop.cropH,
+                    containerWidth / crop.cropW,
+                    containerHeight / crop.cropH,
                   );
                 })()}
-                crop={step === 5 && anoCrops.length === 1 ? anoCrops[0].crop : crop}
+                crop={crop}
                 overlays={overlays}
                 interactive={!isCapturing}
                 onRendered={isCapturing ? handlePrintRendered : undefined}
@@ -318,9 +376,9 @@ export default function ViewerPage() {
                 {step >= 1 && step <= 4 && (
                   <p className="text-[10px] text-[#A0AEC0] mt-0.5">Klicken zum Hervorheben</p>
                 )}
-                {step === 5 && anoCrops.length > 0 && (
+                {step === 5 && activeAnoCodes.length > 0 && (
                   <p className="text-[10px] text-[#A0AEC0] mt-0.5">
-                    {anoCrops.length} aktive(r) Hebegurt
+                    {activeAnoCodes.length} aktive(r) ANO_CODE
                   </p>
                 )}
               </div>
@@ -333,12 +391,11 @@ export default function ViewerPage() {
                 </thead>
                 <tbody>
                   {step === 5 ? (
-                    anoCrops.length > 0 ? (
-                      anoCrops.map(({ label }) => (
-                        <tr key={label} className="border-t border-[#E2E8F0]">
-                          <td colSpan={2} className="px-3 py-2 text-xs font-medium text-[#4A5568]">
-                            {label}
-                          </td>
+                    activeAnoCodes.length > 0 ? (
+                      activeAnoCodes.map((ac) => (
+                        <tr key={`${ac.section}-${ac.value}`} className="border-t border-[#E2E8F0]">
+                          <td className="px-3 py-2 text-xs font-medium text-[#4A5568]">{ac.section}</td>
+                          <td className="px-3 py-2 text-right font-mono text-xs">{ac.value}</td>
                         </tr>
                       ))
                     ) : (
@@ -481,38 +538,78 @@ export default function ViewerPage() {
             `}</style>
             <div id="heer-print-view">
               {printImages.map((src, idx) => {
-                // idx 0 = Übersicht (no legend table)
-                // idx 1–4 = BO / SE / KS / DE (with legend table)
-                const pageTitle = idx === 0 ? "Übersicht" : SECTION_KEYS[idx - 1];
-                const sectionKey = idx > 0 ? SECTION_KEYS[idx - 1] : null;
-                const dims: Record<string, string> = sectionKey
-                  ? ((parsedExecution.sections?.[sectionKey as SectionKey] as Record<string, string>) ?? {})
-                  : {};
+                const isLastPage = idx === printImages.length - 1;
+                if (idx < 5) {
+                  // idx 0 = Übersicht (no legend), idx 1–4 = BO/SE/KS/DE (with legend)
+                  const pageTitle = idx === 0 ? "Übersicht" : SECTION_KEYS[idx - 1];
+                  const sectionKey = idx > 0 ? SECTION_KEYS[idx - 1] : null;
+                  const dims: Record<string, string> = sectionKey
+                    ? ((parsedExecution.sections?.[sectionKey as SectionKey] as Record<string, string>) ?? {})
+                    : {};
+                  return (
+                    <div
+                      key={idx}
+                      className="heer-pv-page"
+                      style={{ breakAfter: isLastPage ? "auto" : "page" }}
+                    >
+                      <p className="heer-pv-title">{pageTitle}</p>
+                      <div className="heer-pv-body">
+                        <div className="heer-pv-img-area">
+                          <img src={src} alt={pageTitle} />
+                        </div>
+                        {sectionKey !== null && Object.keys(dims).length > 0 && (
+                          <div className="heer-pv-legend">
+                            <table>
+                              <thead>
+                                <tr>
+                                  <th>Label</th>
+                                  <th style={{ textAlign: "right" }}>Maß</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {Object.entries(dims).map(([label, value]) => (
+                                  <tr key={label}>
+                                    <td>{label}</td>
+                                    <td>{value}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                }
+                // idx >= 5: Hebegurt pages
+                const isFirstHebegurt = idx === 5;
                 return (
                   <div
                     key={idx}
                     className="heer-pv-page"
-                    style={{ breakAfter: idx < 4 ? "page" : "auto" }}
+                    style={{ breakAfter: isLastPage ? "auto" : "page" }}
                   >
-                    <p className="heer-pv-title">{pageTitle}</p>
+                    <p className="heer-pv-title">
+                      {isFirstHebegurt ? "Hebegurte" : "Hebegurte (Forts.)"}
+                    </p>
                     <div className="heer-pv-body">
                       <div className="heer-pv-img-area">
-                        <img src={src} alt={pageTitle} />
+                        <img src={src} alt="Hebegurte" />
                       </div>
-                      {sectionKey !== null && Object.keys(dims).length > 0 && (
+                      {isFirstHebegurt && activeAnoCodes.length > 0 && (
                         <div className="heer-pv-legend">
                           <table>
                             <thead>
                               <tr>
-                                <th>Label</th>
-                                <th style={{ textAlign: "right" }}>Maß</th>
+                                <th>Sektion</th>
+                                <th style={{ textAlign: "right" }}>ANO_CODE</th>
                               </tr>
                             </thead>
                             <tbody>
-                              {Object.entries(dims).map(([label, value]) => (
-                                <tr key={label}>
-                                  <td>{label}</td>
-                                  <td>{value}</td>
+                              {activeAnoCodes.map((ac) => (
+                                <tr key={`${ac.section}-${ac.value}`}>
+                                  <td>{ac.section}</td>
+                                  <td>{ac.value}</td>
                                 </tr>
                               ))}
                             </tbody>

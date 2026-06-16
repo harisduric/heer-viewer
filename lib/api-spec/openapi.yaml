@@ -102,6 +102,31 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /schema/{name}/pagecount:
+    get:
+      operationId: getSchemaPageCount
+      tags: [schema]
+      summary: Get total page count of a schema PDF
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Page count
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PageCount"
+        "404":
+          description: Schema or PDF not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /schema/{name}/upload:
     post:
       operationId: uploadSchema
@@ -263,6 +288,13 @@ components:
         file:
           type: string
           format: binary
+
+    PageCount:
+      type: object
+      required: [numPages]
+      properties:
+        numPages:
+          type: integer
 
     CoordinatesData:
       type: object

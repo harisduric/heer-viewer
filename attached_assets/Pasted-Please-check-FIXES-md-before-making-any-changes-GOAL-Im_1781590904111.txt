@@ -1,0 +1,73 @@
+Please check FIXES.md before making any changes.
+
+GOAL: Implement a "Hebegurte" (lifting straps) step/rubric, shown 
+after DE, only when needed - using a pragmatic "show everything from 
+page X onwards" approach instead of trying to intelligently select 
+individual ANO_CODE variants.
+
+CONTEXT:
+- The execution description may contain ANO_CODE entries per section 
+  (e.g. "KS1 - ANO_CODE - Z01 - 11", "SE1 - ANO_CODE - Z01 - 11", 
+  "DE - ANO_CODE - Z01 - 11"). Value 0 = not applicable; any non-zero 
+  value (11/12/21/22) means this section uses that lifting-strap 
+  arrangement.
+- Schema PDFs vary in structure - the "ANO_CODE / Hebegurt" content 
+  does NOT always start on page 3. For PLK_W-BO_G-MV_AL it's page 3; 
+  other schemas may have it elsewhere, and there may be several 
+  additional pages after it (e.g. LAV_W-BO_G-MV_AL has page 3 = 
+  ANO_CODE arrangement, page 4 = Diagonalstrebe arrangement, page 5 = 
+  Bildzeichen, page 6 = Optionen-Übersicht - all of which should be 
+  shown together as one continuous scrollable rubric).
+
+TASK:
+1. Koordinaten editor (koordinaten.tsx): add a new simple setting per 
+   schema - a single page number field "Hebegurt-Startseite" 
+   (lifting-strap start page). Default empty/unset. The admin can set 
+   this once per schema (e.g. 3 for PLK_W-BO_G-MV_AL, 3 for 
+   LAV_W-BO_G-MV_AL) to indicate where this section begins. No crop 
+   selection needed for this - just the page number where the 
+   continuous "show everything from here to the end of the PDF" 
+   region starts.
+
+2. Viewer (viewer.tsx): if at least one section (KS/SE/DE) has a 
+   non-zero ANO_CODE AND the schema has a "Hebegurt-Startseite" 
+   defined, add a 6th step "Hebegurte" after DE. This step renders ALL 
+   pages of the schema PDF from the defined start page through the 
+   last page, as a continuous vertically-scrollable view (like 
+   scrolling through a PDF viewer) - no cropping, no per-variant 
+   selection, just the raw PDF pages as-is.
+
+3. Sidebar legend for this step: show a simple table listing which 
+   sections have which ANO_CODE, e.g. "KS - ANO_CODE 11", 
+   "SE - ANO_CODE 11", "DE - ANO_CODE 11" (only sections with a 
+   non-zero code are listed).
+
+4. Print feature: when this step is active/applicable, add ALL pages 
+   from "Hebegurt-Startseite" to the end of the PDF as additional 
+   printed pages (after the DE page), each page rendered as a full 
+   page image (same approach as capturing the other pages). On the 
+   FIRST of these printed pages, also include the ANO_CODE legend 
+   table (same data as the sidebar) as a small legend addition, so 
+   someone with only the paper printout still knows which ANO_CODE 
+   applies to which section.
+
+5. Keep this fully generic - must work for any schema with a defined 
+   Hebegurt-Startseite, any number of trailing pages, not hardcoded to 
+   3 pages or this specific test file.
+
+VERIFICATION:
+- pnpm --filter @workspace/heer-viewer run typecheck must stay clean
+- pnpm --filter @workspace/api-server run typecheck must stay clean
+- Test 1 (no regression): PLK_W-BO_G-MV_AL execution description (all 
+  ANO_CODE = 0) - confirm NO Hebegurte step appears, viewer (5 steps) 
+  and print (5 pages) unchanged.
+- Test 2: Upload the LAV_W-BO_G-MV_AL schema PDF to a library slot, 
+  set Hebegurt-Startseite = 3 in the Koordinaten editor, then load the 
+  LAV_W-BO_G-MV_AL execution description (KS/SE/DE all have ANO_CODE 
+  11). Confirm:
+  - A 6th "Hebegurte" step appears after DE
+  - It shows pages 3-6 of the schema PDF as one continuous scrollable 
+    view
+  - Sidebar legend shows KS/SE/DE - ANO_CODE 11
+  - Print now includes these pages plus the legend on the first one
+- Do NOT mark as done before a visual check of both scenarios.

@@ -178,6 +178,7 @@ export default function KoordinatenPage() {
   const [renderScale, setRenderScale] = useState(1.0);
   const renderScaleRef = useRef(1.0);
 
+  const [hebegurtStartPage, setHebegurtStartPage] = useState<number | "">("");
   const [saved, setSaved] = useState(false);
   const canvasRef  = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -281,6 +282,9 @@ export default function KoordinatenPage() {
   useEffect(() => {
     if (!coordData) return;
     const cd = coordData as Record<string, unknown>;
+
+    // Always load schema-level settings regardless of page view
+    setHebegurtStartPage((cd["hebegurtStartPage"] as number | undefined) ?? "");
 
     if (isPage2) {
       const cropMap = (cd["page2_crops"] ?? {}) as Record<string, CropValues>;
@@ -447,6 +451,13 @@ export default function KoordinatenPage() {
       cd["page3"] = p3;
     }
 
+    // Preserve schema-level Hebegurt setting
+    if (hebegurtStartPage !== "") {
+      cd["hebegurtStartPage"] = Number(hebegurtStartPage);
+    } else {
+      delete cd["hebegurtStartPage"];
+    }
+
     await updateCoords.mutateAsync({ name: selectedSchema, data: cd });
     queryClient.invalidateQueries({ queryKey: getGetCoordinatesQueryKey(selectedSchema) });
     setSaved(true);
@@ -516,6 +527,32 @@ export default function KoordinatenPage() {
             </div>
           )}
         </div>
+
+        {/* ── HEBEGURT SETTINGS card ── */}
+        {selectedSchema && (
+          <div className="mb-4 bg-white rounded-xl border border-[#E2E8F0] p-4">
+            <p className="text-xs font-semibold uppercase tracking-wider text-[#718096] mb-3">Hebegurt-Einstellungen</p>
+            <div className="flex items-center gap-4 flex-wrap">
+              <label className="flex flex-col gap-1">
+                <span className="text-[11px] font-semibold text-[#718096] uppercase">Startseite</span>
+                <input
+                  type="number"
+                  min={1}
+                  placeholder="–"
+                  className="border border-[#E2E8F0] rounded px-2 py-1.5 text-sm font-mono bg-white text-[#2D3748] w-24"
+                  value={hebegurtStartPage}
+                  onChange={(e) =>
+                    setHebegurtStartPage(e.target.value === "" ? "" : Number(e.target.value))
+                  }
+                />
+              </label>
+              <p className="text-xs text-[#718096] max-w-sm">
+                Ab dieser Seite zeigt der Viewer alle PDF-Seiten als Hebegurt-Abschnitt an.
+                Leer lassen = kein Hebegurt-Schritt.
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* ── CROP EDITOR info panel ── */}
         {isPage2 && selectedSchema && hasPdf && (

@@ -55,6 +55,10 @@ export interface SchemaUpload {
   file: Blob;
 }
 
+export interface PageCount {
+  numPages: number;
+}
+
 export interface CoordinatesData { [key: string]: unknown }
 
 export interface CoordinatesInput { [key: string]: unknown }
