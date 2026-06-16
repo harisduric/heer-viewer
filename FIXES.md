@@ -140,15 +140,22 @@ Step 1 — normalize line terminators:
 ```
 cleanText = pdfText.replace(/\r\n/g, "\n").replace(/[\r\x0c]/g, "\n")
 ```
-Step 2 — insert \n before any section prefix not already at line start:
+Step 2 — insert \n before any section prefix **immediately preceded by a digit**:
 ```
 cleanText.replace(
-  /(?<=[^\n])(IM|AM|LM|U_QUE|BO\d*|SE\d*|KS\d*|DE\d*)(?= - )/g,
+  /(?<=\d)(IM|AM|LM|U_QUE|BO\d*|SE\d*|KS\d*|DE\d*)(?= - )/g,
   "\n$1"
 )
 ```
+**IMPORTANT — do NOT change `(?<=\d)` back to `(?<=[^\n])`.**
+The `[^\n]` variant matched "DE" inside "ANO_CODE" (the "O" before "DE" is
+not a newline), which silently destroyed every ANO_CODE entry and broke
+the Hebegurt step. The `\d` lookbehind restricts insertion to genuinely
+fused records (value digit immediately followed by section prefix) while
+leaving tokens like "ANO_CODE" untouched.
+
 The lookahead `(?= - )` prevents false positives inside schema names.
-Generic — catches whitespace-fused and zero-separator concatenation across any number of pages.
+Generic — catches zero-separator concatenation across any number of pages.
 
 ---
 

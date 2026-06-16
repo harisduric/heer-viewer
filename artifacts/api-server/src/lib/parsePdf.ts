@@ -42,21 +42,22 @@ export function parseExecutionDescription(pdfText: string): ParsedExecution {
   // the downstream split("\n") sees consistent line boundaries across pages.
   const cleanText = pdfText.replace(/\r\n/g, "\n").replace(/[\r\x0c]/g, "\n");
 
-  // pdf-parse sometimes fuses consecutive entries onto the same line,
-  // either via whitespace ("...LEER KS - L03...") or with no separator
-  // at all when a page break falls mid-record ("...12DE - ANO_CODE...").
+  // pdf-parse sometimes fuses consecutive entries onto the same line
+  // with no separator when a page break falls mid-record, e.g.:
+  //   "DE - L15 - 12DE - ANO_CODE - Z01 - 0"
   //
-  // Strategy: insert \n before any known section prefix that is NOT
-  // already at the start of a line (i.e. preceded by any non-newline
-  // character).  The lookahead guards against false positives by
-  // requiring the prefix to be followed by " - ".
+  // Strategy: insert \n before any known section prefix that is
+  // immediately preceded by a DIGIT (the tail of the previous numeric
+  // value).  Using (?<=\d) instead of (?<=[^\n]) prevents false
+  // positives where the prefix appears inside a token — most critically
+  // "DE" inside "ANO_CODE" (the "O" before "DE" is a letter, not a
+  // digit, so the lookbehind correctly fails there).
   //
-  // Replacement "\n$1" keeps the prefix itself; the character before
-  // the prefix (whitespace or value digit) is NOT consumed and stays
-  // on the previous line where filter(Boolean) will discard it if it
-  // produces an empty / too-short line.
+  // Replacement "\n$1" keeps the prefix itself; the digit before it
+  // stays on the previous line where filter(Boolean) discards it if
+  // the resulting fragment is too short.
   const normalized = cleanText.replace(
-    /(?<=[^\n])(IM|AM|LM|U_QUE|BO\d*|SE\d*|KS\d*|DE\d*)(?= - )/g,
+    /(?<=\d)(IM|AM|LM|U_QUE|BO\d*|SE\d*|KS\d*|DE\d*)(?= - )/g,
     "\n$1"
   );
   const lines = normalized
