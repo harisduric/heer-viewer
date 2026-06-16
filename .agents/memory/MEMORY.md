@@ -1,2 +1,3 @@
 - [Generated hook queryKey requirement](generated-hook-querykey.md) — Orval-generated hooks require explicit `queryKey` in query options or TS errors on `enabled`-only objects.
 - [Schema page route upper limit](schema-page-limit.md) — `/api/schema/:name/page/:num` had a hard cap at page 10; raised to 200 for Hebegurt multi-page support.
+- [ANO_CODE trailing-field pitfall](ano-code-trailing-field.md) — PDFs can have extra trailing tokens after the ANO_CODE value; use `rest.find` (first numeric non-zero) instead of `rest[last]` to read the value.

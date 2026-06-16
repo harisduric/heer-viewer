@@ -1,0 +1,43 @@
+Please check FIXES.md before making any changes.
+
+BUG: The "Hebegurte" step does not appear in the viewer, even though:
+- hebegurtStartPage = 3 is saved for schema LAV_W-BO_G-MV_AL (visible 
+  and confirmed in the Koordinaten editor)
+- The execution description (LAV_W-BO_G-MV_AL_-_0.pdf) has multiple 
+  non-zero ANO_CODE entries: KS1, SE1, KS2, SE2, and DE all have 
+  ANO_CODE = 11
+
+Expected: a 6th step "Hebegurte" should appear after DE in the viewer 
+step navigation.
+
+TASK - DIAGNOSE FIRST, then fix:
+1. Check how `hasHebegurt` is computed in viewer.tsx - does it 
+   correctly read (a) the parsed ANO_CODE values from the execution 
+   description response, AND (b) the hebegurtStartPage value from the 
+   loaded schema's coordinates? Log/trace both values when 
+   LAV_W-BO_G-MV_AL_-_0.pdf is uploaded with LAV_W-BO_G-MV_AL as the 
+   matched schema.
+2. Check parsePdf.ts: are ANO_CODE entries with section-suffixed 
+   prefixes like "KS1", "SE1", "KS2", "SE2" (not just "KS"/"SE"/"DE") 
+   correctly recognized and parsed? The PLK_W-BO_G-MV_AL test file 
+   only had "KS1"/"SE1"/"SE2"/"KS2" suffixes too actually - so check 
+   if this parsing already worked, or if there's a regex/section-name 
+   mismatch that causes ANO_CODE values to not be captured into the 
+   parsed result at all for this file.
+3. Check the schema-loading side: does the frontend actually fetch and 
+   use the current hebegurtStartPage from the coordinates API for the 
+   ACTIVE loaded schema, or could it be using stale/cached coordinate 
+   data from before the value was saved?
+4. Report exactly which of these is the root cause, then fix it 
+   generically (not hardcoded to this test file).
+
+VERIFICATION:
+- pnpm --filter @workspace/heer-viewer run typecheck must stay clean
+- pnpm --filter @workspace/api-server run typecheck must stay clean
+- Re-test: load LAV_W-BO_G-MV_AL_-_0.pdf execution description with 
+  LAV_W-BO_G-MV_AL schema (hebegurtStartPage=3 already saved) - confirm 
+  the "Hebegurte" step now appears after DE, shows pages 3-6, and the 
+  sidebar legend lists KS/SE/DE with ANO_CODE 11.
+- Re-test PLK_W-BO_G-MV_AL (no ANO_CODE) to confirm still no regression 
+  (no Hebegurte step).
+- Do NOT mark as done before a visual check of both scenarios.

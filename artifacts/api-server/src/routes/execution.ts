@@ -41,8 +41,14 @@ router.post(
 
     const matchedSchema = matchSchemaName(file.originalname);
 
+    // Diagnostic: capture all raw lines containing ANO_CODE before normalization
+    const rawAnoLines = pdfText
+      .split(/\r?\n|\r|\x0c/)
+      .filter((l) => l.includes("ANO_CODE"))
+      .slice(0, 30);
+
     req.log.info(
-      { matchedSchema, filename: file.originalname },
+      { matchedSchema, filename: file.originalname, anoCodes: parsedData.anoCodes, rawAnoLines },
       "Execution PDF parsed"
     );
 

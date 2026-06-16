@@ -92,8 +92,12 @@ export function parseExecutionDescription(pdfText: string): ParsedExecution {
 
     if (code === "ANO_CODE") {
       const optionCode = rest[0];
-      if (rawValue && rawValue !== "0") {
-        result.anoCodes.push({ section, optionCode, value: rawValue });
+      // Use the first purely-numeric non-"0" token from rest as the value.
+      // Some PDFs add trailing fields after the ANO_CODE value (e.g. a "0"
+      // sub-code), so taking rest[last] would incorrectly yield "0".
+      const anoValue = rest.find((v) => /^\d+$/.test(v) && v !== "0") ?? "0";
+      if (anoValue !== "0") {
+        result.anoCodes.push({ section, optionCode, value: anoValue });
       }
       continue;
     }
