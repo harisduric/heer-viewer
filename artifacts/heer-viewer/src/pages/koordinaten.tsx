@@ -148,6 +148,7 @@ export default function KoordinatenPage() {
   const { data: library = [] } = useGetSchemaLibrary();
   const [selectedSchema, setSelectedSchema] = useState("");
   const [selectedPage, setSelectedPage] = useState("page2");
+  const [previewPage, setPreviewPage] = useState(2);
   const [pdfData, setPdfData] = useState<Uint8Array | null>(null);
 
   // Crop editor state (page2)
@@ -189,10 +190,11 @@ export default function KoordinatenPage() {
   const isPage2       = selectedPage === "page2";
   const isPage2Labels = selectedPage.startsWith("page2_labels_");
   const labelSection  = isPage2Labels ? (selectedPage.split("_")[2] as SectionKey) : null;
-  // When in crop editor, show the active section's configured page.
-  // When editing labels for a section, show that section's page.
+  // When in crop editor, the preview page is controlled explicitly by previewPage
+  // (no longer auto-derived from activeSection — tab clicks must not trigger a fetch).
+  // When editing labels for a section, show that section's configured page.
   const cropPage      = isPage2
-    ? (cropPages[activeSection] ?? 2)
+    ? previewPage
     : isPage2Labels
     ? (cropPages[labelSection ?? "SE"] ?? 2)
     : 2;
@@ -234,7 +236,7 @@ export default function KoordinatenPage() {
     // Capture the page we intend to fetch so the .then() callback can verify
     // it is still the current page before committing to setPdfData.
     const intendedPage = pageNum;
-    console.log(`[FETCH] effect fires — schema=${selectedSchema} pageNum=${intendedPage} activeSection=${activeSection}`);
+    console.log(`[FETCH] effect fires — schema=${selectedSchema} pageNum=${intendedPage}`);
     fetch(`/api/schema/${encodeURIComponent(selectedSchema)}/page/${intendedPage}?t=${Date.now()}`)
       .then(async (r) => {
         console.log(`[FETCH] response ok=${r.ok} status=${r.status} cancelled=${cancelled} for page=${intendedPage}`);
@@ -248,7 +250,9 @@ export default function KoordinatenPage() {
       })
       .catch(console.error);
     return () => { cancelled = true; };
-  }, [selectedSchema, pageNum, activeSection]);
+  // NOTE: activeSection intentionally omitted — tab clicks must NOT trigger a PDF fetch.
+  // The page to display is driven solely by previewPage (via pageNum).
+  }, [selectedSchema, pageNum]);
 
   // ── Render PDF canvas ──────────────────────────────────────────────────────
   // FIX: pass pdfData.slice() to getDocument so pdfjs does NOT transfer/neuter
@@ -505,7 +509,7 @@ export default function KoordinatenPage() {
             <select
               className="border border-[#E2E8F0] rounded-lg px-3 py-2 text-sm bg-white text-[#2D3748] min-w-[220px]"
               value={selectedSchema}
-              onChange={(e) => setSelectedSchema(e.target.value)}
+              onChange={(e) => { setSelectedSchema(e.target.value); setPreviewPage(2); }}
             >
               <option value="">— Schema auswählen —</option>
               {library.filter((s) => s.status === "loaded").map((s) => (
@@ -525,6 +529,30 @@ export default function KoordinatenPage() {
               ))}
             </select>
           </div>
+          {isPage2 && !!selectedSchema && (
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-[#718096] uppercase tracking-wider">Vorschau-Seite</label>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => setPreviewPage((p) => Math.max(1, p - 1))}
+                  className="w-8 h-9 rounded-md border border-[#E2E8F0] bg-white text-[#4A5568] hover:bg-[#F7FAFC] text-base font-bold flex items-center justify-center"
+                  title="Vorherige Seite"
+                >‹</button>
+                <input
+                  type="number"
+                  min={1}
+                  className="w-14 border border-[#E2E8F0] rounded-lg px-2 py-2 text-sm font-mono text-center bg-white text-[#2D3748]"
+                  value={previewPage}
+                  onChange={(e) => setPreviewPage(Math.max(1, Number(e.target.value) || 1))}
+                />
+                <button
+                  onClick={() => setPreviewPage((p) => p + 1)}
+                  className="w-8 h-9 rounded-md border border-[#E2E8F0] bg-white text-[#4A5568] hover:bg-[#F7FAFC] text-base font-bold flex items-center justify-center"
+                  title="Nächste Seite"
+                >›</button>
+              </div>
+            </div>
+          )}
           {selectedSchema && (
             <div className="flex gap-2">
               <Button onClick={handleSave} disabled={updateCoords.isPending} size="sm">
@@ -724,7 +752,7 @@ export default function KoordinatenPage() {
 
               {/* Crop editor: colored rectangles for sections on the currently displayed page */}
               {isPage2 &&
-                SECTIONS.filter((s) => cropPages[s] === cropPages[activeSection]).map((s) => (
+                SECTIONS.filter((s) => cropPages[s] === previewPage).map((s) => (
                   <CropRect
                     key={s}
                     sectionKey={s}

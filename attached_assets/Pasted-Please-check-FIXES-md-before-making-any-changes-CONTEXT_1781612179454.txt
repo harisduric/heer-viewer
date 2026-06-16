@@ -1,0 +1,58 @@
+Please check FIXES.md before making any changes.
+
+CONTEXT: Two previous attempts to auto-switch the PDF preview page when 
+clicking section tabs (BO/SE/KS/DE) have failed due to race conditions 
+between the coordinate-loading effect and the PDF-fetch effect, even 
+after fixing a pdfjs buffer-detachment bug. The user proposes a 
+simpler, more robust UX: decouple "which page is shown" from "which 
+section tab is active" entirely, using an explicit page-switcher 
+dropdown.
+
+NEW APPROACH:
+1. Add an explicit page-number DROPDOWN/SELECTOR in the Koordinaten 
+   editor's crop-editor view, separate from the section tabs (SE/KS/
+   BO/DE) and separate from each section's own page-number input field. 
+   This dropdown directly controls which PDF page is currently being 
+   PREVIEWED/displayed on the canvas - nothing else triggers a page 
+   change automatically.
+2. Remove any automatic page-switching tied to clicking a section tab. 
+   Clicking a section tab (SE/KS/BO/DE) should ONLY select which 
+   crop rectangle is "active" for editing (for the X/Y/Breite/Höhe 
+   number inputs) - it should NOT trigger a PDF page fetch/switch by 
+   itself.
+3. The crop rectangles shown on the canvas continue to be filtered to 
+   only show rectangles whose configured page matches the CURRENTLY 
+   DISPLAYED page (from the new page dropdown) - this filtering logic 
+   already works correctly and should be reused.
+4. Workflow for the admin: 
+   - Use the page dropdown to navigate to "Page 2"
+   - Click the BO tab, then drag/resize its rectangle (visible because 
+     BO is configured for page 2)
+   - Use the page dropdown to navigate to "Page 3"  
+   - Click the SE tab, then drag/resize its rectangle (visible because 
+     SE is configured for page 3)
+   - And so on for KS/DE
+5. When the admin changes a section's page-number input field (e.g. 
+   types "3" into BO's page field), it should NOT automatically switch 
+   the preview - the admin uses the separate page dropdown for that. 
+   This fully decouples "configuring" from "viewing".
+6. Simplify/remove the fragile auto-switching fetch-effect logic that 
+   was the source of the race condition bugs - this dropdown-based 
+   approach should be simpler and more reliable than trying to 
+   auto-detect which page to show.
+
+VERIFICATION:
+- pnpm --filter @workspace/heer-viewer run typecheck must stay clean
+- Test with PLK_W-BO_G-OV_IL: use the page dropdown to manually 
+  navigate between page 2 and page 3, confirm the correct PDF content 
+  and matching crop rectangles show every time, with no race 
+  conditions or stuck/wrong pages - regardless of which section tab is 
+  active.
+- Confirm dragging/resizing a rectangle still works correctly while 
+  on its correct page.
+- Re-test PLK_W-BO_G-MV_AL (all sections page 2) - confirm the 
+  simplified workflow still works fine when everything is on one page 
+  (dropdown stays on "Page 2", no extra clicks needed beyond normal 
+  tab switching for editing).
+- Do NOT mark as done before a visual check of manually navigating 
+  between pages 2 and 3 for PLK_W-BO_G-OV_IL.
