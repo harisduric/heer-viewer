@@ -194,7 +194,18 @@ export default function ViewerPage() {
 
   // Map step → PDF page number (1-indexed). The server extracts and returns
   // exactly the requested page, so PdfViewer always renders pageNumber={1}.
-  const pdfPageNum = step === 0 ? 1 : step >= 1 && step <= 4 ? 2 : 3;
+  // For BO/SE/KS/DE steps, read the per-section page stored in page2_crops[sKey].page
+  // (defaults to 2 for backward compat with schemas that don't have this field yet).
+  const sectionPage = useMemo<number>(() => {
+    if (step < 1 || step > 4 || !coords) return 2;
+    const sKey = SECTION_KEYS[step - 1];
+    const cropEntry = (
+      coords as Record<string, Record<string, { page?: number }>> | undefined
+    )?.["page2_crops"]?.[sKey];
+    return cropEntry?.page ?? 2;
+  }, [step, coords]);
+
+  const pdfPageNum = step === 0 ? 1 : step >= 1 && step <= 4 ? sectionPage : 1;
   const pdfUrl = getGetSchemaPageUrl(schemaName, pdfPageNum);
 
   // URL for the current Hebegurt page during capture (changes with hebegurtCaptureTick).

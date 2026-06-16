@@ -59,12 +59,21 @@ When a schema PDF is uploaded to Bibliothek:
 
 ---
 
-## 4. Beschriftungs-Positionen Views — REMOVED
-These views (BO/SE/KS/DE Beschriftung) are removed from the
-Koordinaten editor. The editor only has:
-- Seite 1 — Übersicht (global dimensions)
-- Seite 2 — Crop-Editor (BO/SE/KS/DE regions)
-- Seite 3 — KS/SE/DE (ANO_CODE crops)
+## 4. Koordinaten Editor — Page Model
+The editor has two dropdown tabs:
+- Seite 1 — Übersicht (global dimensions, label positions on page 1)
+- BO/SE/KS/DE — Crop-Editor (crop rectangles + per-section page numbers)
+
+Each section (BO/SE/KS/DE) has its own PDF page number stored as
+`page2_crops[section].page` (integer, 1-indexed, default 2).
+Schemas without this field fall back to page 2 (backward compat).
+
+The old "Seite 3 — KS/SE/DE" dropdown entries are REMOVED.
+They were a dead legacy concept replaced by the Hebegurt multi-page approach.
+
+detectLabels.ts scans whichever pages are configured in the cropMap
+(via cropMap[sec].page) and restricts label assignment to sections
+configured on the same page as each text item.
 
 ---
 

@@ -1,0 +1,64 @@
+Please check FIXES.md before making any changes.
+
+GOAL: Simplify and generalize the Koordinaten editor's page model for 
+BO/SE/KS/DE crops, replacing the confusing legacy "Seite 3 — KS/SE/DE" 
+entries (leftover from the old per-section ANO_CODE crop approach, 
+which has since been replaced by the "Hebegurt-Startseite: show 
+everything from page X" approach).
+
+NEW MODEL:
+For each schema, each of the 4 sections (BO, SE, KS, DE) gets its own 
+PAGE NUMBER setting, independent of the others - e.g. all 4 could be 
+page 2 (the common case), or BO could be page 2 while SE/KS/DE are 
+page 3 (as documented for PLK_W-BO_G-MV_IL in the original project 
+notes). The existing crop rectangle (x/y/width/height) for each 
+section stays exactly as it is now - just now explicitly tied to that 
+section's chosen page number.
+
+TASK:
+1. Data model: extend the coordinates JSON structure so each section's 
+   crop entry (page2_crops.BO / .SE / .KS / .DE) includes a "page" 
+   field (default 2, for backward compatibility with existing schemas 
+   that don't have this field yet).
+2. Koordinaten editor UI: 
+   - Remove the old "Seite 3 — KS", "Seite 3 — SE", "Seite 3 — DE" 
+     dropdown entries entirely (dead legacy concept).
+   - In the "Seite 2 — Crop-Editor" view (rename it to something more 
+     generic like "BO/SE/KS/DE — Crop-Editor" since it's no longer 
+     fixed to page 2), add a page-number selector NEXT TO each 
+     section's color tab (SE/KS/BO/DE buttons) so the admin can pick 
+     which PDF page that section's crop should be taken from. When a 
+     different page is selected for a section, the underlying PDF page 
+     preview/background should update to show that page, while the 
+     other sections' crop rectangles (if on a different page) are 
+     simply not shown on this page's preview - or, simpler: show one 
+     page background at a time per section being edited, with the 
+     other sections' rectangles shown only when their page matches the 
+     currently displayed page.
+   - Keep the "Hebegurt-Startseite" card exactly as it is now (this 
+     part already works well and doesn't need to change).
+3. detectLabels.ts: update label auto-detection to scan the CORRECT 
+   page for each section based on its configured page number, instead 
+   of assuming all 4 sections are always on page 2.
+4. Viewer (viewer.tsx): when rendering each step (BO/SE/KS/DE), fetch 
+   and render that section's configured page number, not a hardcoded 
+   page 2.
+5. Backward compatibility: schemas without an explicit "page" field 
+   per section should default to page 2, preserving current behavior 
+   for PLK_W-BO_G-MV_AL (no regression).
+
+VERIFICATION:
+- pnpm --filter @workspace/heer-viewer run typecheck must stay clean
+- pnpm --filter @workspace/api-server run typecheck must stay clean
+- Test 1 (no regression): PLK_W-BO_G-MV_AL - confirm all 5 steps still 
+  work exactly as before (all sections still on page 2, no explicit 
+  page field needed).
+- Test 2: In the Koordinaten editor for LAV_W-BO_G-MV_AL, confirm BO/
+  SE/KS/DE all show page 2 (current correct setup) and the old "Seite 
+  3 — KS/SE/DE" entries are gone from the dropdown.
+- Test 3 (the actual new capability): if possible, simulate a schema 
+  where one section is on a different page than the others, and 
+  confirm the editor lets you configure this and the viewer correctly 
+  fetches/displays from the right page per section.
+- Do NOT mark as done before a visual check of the Koordinaten editor 
+  UI and at least the no-regression test.

@@ -42,6 +42,8 @@ export interface CropRegion {
   cropY: number;
   cropW: number;
   cropH: number;
+  /** PDF page number this section's crop is on (1-indexed, default 2). */
+  page?: number;
 }
 
 export interface DetectionResult {
@@ -160,20 +162,36 @@ export async function detectLabelsFromPdf(
   pdfBytes: Buffer,
   cropMap?: Partial<Record<SectionKey, CropRegion>>
 ): Promise<DetectionResult> {
-  const rawItems: Array<{ str: string; x: number; y: number; fontSize: number; isRotated: boolean; rotation: number; textWidth: number }> = [];
-  let pageH = DETECT_PAGE_H;
+  const rawItems: Array<{
+    str: string; x: number; y: number; fontSize: number;
+    isRotated: boolean; rotation: number; textWidth: number;
+    pageNum: number;
+  }> = [];
+
+  // Determine which pages to scan and which sections live on each page.
+  // Defaults to page 2 for all sections when no cropMap/page field is provided
+  // (backward compat: existing schemas without per-section page configuration).
+  const pagesToScan = new Set<number>();
+  const sectionsByPage = new Map<number, SectionKey[]>();
+  for (const sec of SECTIONS) {
+    const p = cropMap?.[sec]?.page ?? 2;
+    pagesToScan.add(p);
+    const existing = sectionsByPage.get(p) ?? [];
+    existing.push(sec);
+    sectionsByPage.set(p, existing);
+  }
 
   try {
     await pdfParse(pdfBytes, {
       max: 0,
       pagerender: async (page) => {
-        if (page.pageNumber !== 2) return "";
+        if (!pagesToScan.has(page.pageNumber)) return "";
 
         const vp = page.getViewport({ scale: 1.0 });
         // vp.height is undefined in some pdf-parse pdfjs builds — guard it.
         // If it IS defined, it gives the actual page height which would shift the
         // coordinate system. Only use it when valid.
-        if (Number.isFinite(vp.height)) pageH = vp.height;
+        const ph = Number.isFinite(vp.height) ? vp.height : DETECT_PAGE_H;
 
         const content = await page.getTextContent();
         for (const item of content.items) {
@@ -201,11 +219,12 @@ export async function detectLabelsFromPdf(
           rawItems.push({
             str: s,
             x: t[4],
-            y: pageH - t[5], // flip from PDF space (bottom-up) to screen space (top-down)
+            y: ph - t[5], // flip from PDF space (bottom-up) to screen space (top-down)
             fontSize,
             isRotated,
             rotation,
             textWidth: Number.isFinite(item.width) && item.width > 0 ? item.width : 0,
+            pageNum: page.pageNumber,
           });
         }
         return "";
@@ -249,7 +268,17 @@ export async function detectLabelsFromPdf(
 
     if (item.isRotated) rotatedCount++; else normalCount++;
 
-    const sec = assignSection(item.x, item.y, cropMap ?? {}, sectionPos);
+    // Restrict section assignment to sections configured on the same page as this item.
+    // When all sections are on page 2 (the common case) this is identical to the old
+    // behaviour; it only diverges when a section is configured on a different page.
+    const sectionsOnPage = sectionsByPage.get(item.pageNum) ?? [...SECTIONS];
+    const filteredCropMap: Partial<Record<SectionKey, CropRegion>> = {};
+    const filteredCentres: Record<SectionKey, PointCoord> = { ...FALLBACK_CENTRES };
+    for (const s of sectionsOnPage) {
+      if (cropMap?.[s]) filteredCropMap[s] = cropMap[s];
+      filteredCentres[s] = sectionPos[s];
+    }
+    const sec = assignSection(item.x, item.y, filteredCropMap, filteredCentres);
     const coord: PointCoord = {
       x: Math.round(item.x),
       y: Math.round(item.y),

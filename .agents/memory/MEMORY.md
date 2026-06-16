@@ -4,3 +4,4 @@
 - [PdfViewer render loop via unstable overlays prop](pdfviewer-render-loop.md) — overlays default `[]` and computed arrays must be stable refs; unstable deps cause infinite setLoading(true) cycles and stuck spinners.
 - [PdfViewer fitToWidth pattern](pdf-viewer-fit-to-width.md) — scale from actual native page width; never assume 595pt A4 for schema PDFs.
 - [JSX const declaration error](jsx-const-in-expression.md) — `const` inside a JSX `{}` expression is a Babel parse error even when tsc accepts it; hoist to component body.
+- [Per-section page model](per-section-page-model.md) — each BO/SE/KS/DE crop can be on its own PDF page; stored as page2_crops[sec].page (default 2).
