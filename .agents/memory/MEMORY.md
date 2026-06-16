@@ -1,3 +1,4 @@
 - [Generated hook queryKey requirement](generated-hook-querykey.md) — Orval-generated hooks require explicit `queryKey` in query options or TS errors on `enabled`-only objects.
 - [Schema page route upper limit](schema-page-limit.md) — `/api/schema/:name/page/:num` had a hard cap at page 10; raised to 200 for Hebegurt multi-page support.
 - [ANO_CODE normalization regex false-positive](ano-code-trailing-field.md) — use `(?<=\d)` not `(?<=[^\n])` in parsePdf normalization; broad lookbehind splits "ANO_CODE" at "DE", destroying all ANO_CODE entries.
+- [PdfViewer render loop via unstable overlays prop](pdfviewer-render-loop.md) — overlays default `[]` and computed arrays must be stable refs; unstable deps cause infinite setLoading(true) cycles and stuck spinners.

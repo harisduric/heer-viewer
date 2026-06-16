@@ -8,6 +8,18 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   import.meta.url
 ).toString();
 
+// Module-level constant so the default overlays prop is always the same reference.
+// This prevents PdfViewer's render effect from re-running when the caller
+// omits overlays (each function call would otherwise produce a new [] object).
+const EMPTY_OVERLAYS: {
+  x: number;
+  y: number;
+  label: string;
+  value: string;
+  rotation?: number;
+  textWidth?: number;
+}[] = [];
+
 interface PdfViewerProps {
   url?: string;
   blob?: Blob;
@@ -25,13 +37,14 @@ export function PdfViewer({
   pageNumber = 1,
   scale = 1,
   crop,
-  overlays = [],
+  overlays = EMPTY_OVERLAYS,
   interactive = false,
   onRendered,
 }: PdfViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const pdfCanvasRef = useRef<HTMLCanvasElement>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
+  const renderTaskRef = useRef<pdfjsLib.RenderTask | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -111,12 +124,15 @@ export function PdfViewer({
         overlayCanvas.width = pdfCanvas.width;
         overlayCanvas.height = pdfCanvas.height;
 
-        await page.render({
+        const renderTask = page.render({
           canvasContext: context,
           canvas: pdfCanvas,
           viewport,
           transform: [1, 0, 0, 1, offsetX, offsetY],
-        }).promise;
+        });
+        renderTaskRef.current = renderTask;
+        await renderTask.promise;
+        renderTaskRef.current = null;
 
         // Server detection used pageH=842 as fallback (pdf-parse vp.height is undefined).
         // pdfjs-dist returns the real height. Apply correction so overlays land correctly.
@@ -260,7 +276,17 @@ export function PdfViewer({
             onRendered(composite.toDataURL("image/png"));
           }
         }
-      } catch (err) {
+      } catch (err: unknown) {
+        // pdfjs throws RenderingCancelledException (type field, not an Error subclass)
+        // when the render task is cancelled on cleanup. Suppress it — it is expected.
+        if (
+          typeof err === "object" &&
+          err !== null &&
+          "type" in err &&
+          (err as { type?: string }).type === "RenderingCancelledException"
+        ) {
+          return;
+        }
         console.error(err);
         if (active) {
           setError("PDF konnte nicht geladen werden.");
@@ -272,6 +298,12 @@ export function PdfViewer({
     renderPdf();
     return () => {
       active = false;
+      // Cancel any in-progress pdfjs render task so it does not write to a
+      // stale canvas after this effect instance is superseded.
+      if (renderTaskRef.current) {
+        renderTaskRef.current.cancel();
+        renderTaskRef.current = null;
+      }
     };
   }, [url, blob, pageNumber, zoom, crop, overlays, onRendered]);
 

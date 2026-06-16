@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { useLocation } from "wouter";
 import { useAppStore } from "../store";
@@ -202,25 +202,23 @@ export default function ViewerPage() {
       : null;
 
   // --- Compute overlays / crops for the current step ---
+  // Both are memoized so their references are stable across re-renders.
+  // PdfViewer lists `overlays` in its effect deps; a new [] on every render
+  // would restart the PDF render loop → stuck spinner + console flood.
 
-  let crop: CropRect | null = null;
-  let overlays: { x: number; y: number; label: string; value: string; rotation?: number }[] = [];
+  type LabelCoord = { x: number; y: number; rotation?: number; textWidth?: number };
 
-  if (step === 0) {
-    // Übersicht (page 1): the drawing already contains full written-out labels
-    // (e.g. "AM-LÄNGE"). Overlaying dimension values produces orphaned floaters
-    // with no clear association. All values are shown in the sidebar table instead.
-    // overlays stays empty — page renders unmodified.
-  } else if (step >= 1 && step <= 4) {
+  const crop = useMemo<CropRect | null>(() => {
+    if (step < 1 || step > 4 || !coords) return null;
     const sKey = SECTION_KEYS[step - 1];
     const cropMap =
-      (
-        coords as
-          | Record<string, Record<string, CropRect>>
-          | undefined
-      )?.["page2_crops"] ?? {};
-    crop = cropMap[sKey] ?? null;
-    type LabelCoord = { x: number; y: number; rotation?: number; textWidth?: number };
+      (coords as Record<string, Record<string, CropRect>> | undefined)?.["page2_crops"] ?? {};
+    return cropMap[sKey] ?? null;
+  }, [step, coords]);
+
+  const overlays = useMemo(() => {
+    if (step < 1 || step > 4 || !coords || !parsedExecution) return [];
+    const sKey = SECTION_KEYS[step - 1];
     const p2Sections =
       (coords as Record<string, Record<string, Record<string, LabelCoord>>> | undefined)?.[
         "page2"
@@ -245,10 +243,17 @@ export default function ViewerPage() {
       if (positions.length === 0) {
         console.warn(`[Viewer] Label ${label} not detected for section ${sKey} — no overlay will be shown`);
       }
-      return positions.map((pos) => ({ label, value: val, x: pos.x, y: pos.y, rotation: pos.rotation, textWidth: pos.textWidth }));
+      return positions.map((pos) => ({
+        label,
+        value: val,
+        x: pos.x,
+        y: pos.y,
+        rotation: pos.rotation,
+        textWidth: pos.textWidth,
+      }));
     });
-    overlays = highlightedLabel ? all.filter((o) => o.label === highlightedLabel) : all;
-  }
+    return highlightedLabel ? all.filter((o) => o.label === highlightedLabel) : all;
+  }, [step, coords, parsedExecution, highlightedLabel]);
 
   const currentDims: Record<string, string> =
     step === 0
@@ -333,16 +338,25 @@ export default function ViewerPage() {
                       <Loader2 className="w-8 h-8 animate-spin text-[#B8CC5A]" />
                     </div>
                   ) : (
-                    hebegurtPageNums.map((pNum) => (
-                      <div key={pNum} className="w-full flex flex-col items-center">
-                        <PdfViewer
-                          url={getGetSchemaPageUrl(schemaName, pNum)}
-                          pageNumber={1}
-                          scale={Math.min(1.8, Math.max(0.5, (containerWidth - 32) / 595))}
-                          interactive={false}
-                        />
-                      </div>
-                    ))
+                    hebegurtPageNums.map((pNum) => {
+                      // Give each PdfViewer an explicit pixel height so `h-full`
+                      // inside PdfViewer resolves correctly.  Without a fixed
+                      // height on the parent the wrapper has height:auto and
+                      // `h-full` computes to 0 px, collapsing the canvas.
+                      const hebScale = Math.min(1.8, Math.max(0.5, (containerWidth - 32) / 595));
+                      const pageW = Math.round(595 * hebScale);
+                      const pageH = Math.round(842 * hebScale);
+                      return (
+                        <div key={pNum} style={{ width: pageW, height: pageH, flexShrink: 0 }}>
+                          <PdfViewer
+                            url={getGetSchemaPageUrl(schemaName, pNum)}
+                            pageNumber={1}
+                            scale={hebScale}
+                            interactive={false}
+                          />
+                        </div>
+                      );
+                    })
                   )}
                 </div>
               )
@@ -392,8 +406,8 @@ export default function ViewerPage() {
                 <tbody>
                   {step === 5 ? (
                     activeAnoCodes.length > 0 ? (
-                      activeAnoCodes.map((ac) => (
-                        <tr key={`${ac.section}-${ac.value}`} className="border-t border-[#E2E8F0]">
+                      activeAnoCodes.map((ac, idx) => (
+                        <tr key={`${idx}-${ac.section}-${ac.value}`} className="border-t border-[#E2E8F0]">
                           <td className="px-3 py-2 text-xs font-medium text-[#4A5568]">{ac.section}</td>
                           <td className="px-3 py-2 text-right font-mono text-xs">{ac.value}</td>
                         </tr>
