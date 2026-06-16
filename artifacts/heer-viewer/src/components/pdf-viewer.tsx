@@ -133,8 +133,7 @@ export function PdfViewer({
         // Labels closer than this (in PDF points) share the smaller font to reduce overlap.
         const CLUSTER_RADIUS = 60;
         const PAD = 3;   // padding inside the value's background highlight
-        // Visual gap (canvas px) between the END of the Lx glyph and the START of the value.
-        // Kept small — the label-end is computed precisely from textWidth * zoom.
+        // Visual gap (canvas px) between the Lx glyph edge and the value text.
         const GAP = 5;
         // Fallback label width (canvas px) when textWidth is absent (old DB entries).
         const LABEL_W_FALLBACK = 16;
@@ -163,22 +162,21 @@ export function PdfViewer({
             : FONT_LARGE
         );
 
-        // ── Draw value labels BELOW their Lx anchor ─────────────────────────
+        // ── Draw value labels: below first, with fallback positions ──────────
         // The original Lx text in the PDF is left completely untouched.
-        // Anchor point (rawCx, rawCy) is the baseline-left corner of the Lx glyph.
+        // Anchor point (rawCx, rawCy): baseline-left for rotation=0;
+        // bottom-of-visible-glyph for rotation=90.
         //
-        // ALL labels (rotation=0 and rotation=90) place the value BELOW the anchor:
-        //   vy = rawCy + GAP + HALF_H
+        // Four candidate positions are tried in priority order (all clamped to
+        // canvas bounds before testing):
+        //   1. Below  — centered horizontally under the label  [preferred]
+        //   2. Right  — after the right/bottom end of the label
+        //   3. Above  — centered horizontally above the label
+        //   4. Left   — to the left of the label
         //
-        // For rotation=0 (horizontal labels):
-        //   - rawCx is the LEFT edge; the label extends rightward by labelWidthPx.
-        //   - Value is centered under the label: vx = rawCx + labelWidthPx/2 − tw/2
-        //
-        // For rotation=90° CCW labels:
-        //   - rawCy IS the BOTTOM edge of the visible Lx string in screen space.
-        //   - Centering: vx = rawCx (the label is a narrow vertical stroke at rawCx).
-        //
-        // Collision detection: skip any value box that overlaps an already-drawn one.
+        // The first collision-free candidate is used. If ALL candidates collide
+        // (e.g. a dense cluster), candidate 1 is drawn anyway — a value MUST
+        // always be visible; it must never be silently omitted.
 
         const drawnBoxes: { x: number; y: number; w: number; h: number }[] = [];
 
@@ -201,28 +199,47 @@ export function PdfViewer({
           const tw = overlayContext.measureText(text).width;
           const isRotated = !!overlay.rotation;
 
-          // labelWidthPx: the rendered advance width of the Lx glyph in canvas pixels.
-          // overlay.textWidth is in PDF points; multiply by zoom to get canvas px.
+          // labelWidthPx: advance width of the Lx glyph in canvas px.
+          // overlay.textWidth is in PDF pts; multiply by zoom to convert.
           const labelWidthPx =
             overlay.textWidth != null ? overlay.textWidth * zoom : LABEL_W_FALLBACK;
 
-          // Place value BELOW the label anchor + GAP, for all rotations.
-          // vy: same formula for both — rawCy is the bottom of the visible glyph
-          //     for rotation=90, and the baseline (≈ bottom of cap-height) for rotation=0.
-          // vx: center under the label.
-          //   - rotation=0: label center = rawCx + labelWidthPx/2
-          //   - rotation=90: label is a narrow vertical stroke; center ≈ rawCx
+          // Horizontal centre of the Lx glyph in canvas px.
+          // rotation=90: label is a narrow vertical stroke — centre ≈ rawCx.
+          // rotation=0:  label extends rightward — centre = rawCx + labelWidthPx/2.
           const labelCenterX = isRotated ? rawCx : rawCx + labelWidthPx / 2;
-          let vx = labelCenterX - tw / 2;
-          let vy = rawCy + GAP + HALF_H;
 
-          // Clamp so value never renders outside the visible canvas
-          vx = Math.max(PAD, Math.min(vx, pdfCanvas.width - tw - PAD));
-          vy = Math.max(HALF_H, Math.min(vy, pdfCanvas.height - HALF_H));
+          // Candidate positions (raw, before clamping).
+          const rawCandidates: Array<{ vx: number; vy: number }> = [
+            // 1. Below — centered under label
+            { vx: labelCenterX - tw / 2,      vy: rawCy + GAP + HALF_H },
+            // 2. Right of label end
+            { vx: rawCx + labelWidthPx + GAP,  vy: rawCy },
+            // 3. Above — centered over label
+            { vx: labelCenterX - tw / 2,      vy: rawCy - GAP - HALF_H },
+            // 4. Left of label
+            { vx: rawCx - tw - GAP,            vy: rawCy },
+          ];
 
+          // Clamp every candidate to canvas bounds.
+          const clampedCandidates = rawCandidates.map(({ vx, vy }) => ({
+            vx: Math.max(PAD, Math.min(vx, pdfCanvas.width - tw - PAD)),
+            vy: Math.max(HALF_H, Math.min(vy, pdfCanvas.height - HALF_H)),
+          }));
+
+          // Pick first collision-free candidate; fall back to #1 if all collide.
+          let chosen = clampedCandidates[0];
+          for (const c of clampedCandidates) {
+            const testBox = { x: c.vx - PAD, y: c.vy - HALF_H, w: tw + PAD * 2, h: FONT + PAD * 2 };
+            if (!hasCollision(testBox)) {
+              chosen = c;
+              break;
+            }
+          }
+
+          const { vx, vy } = chosen;
           const box = { x: vx - PAD, y: vy - HALF_H, w: tw + PAD * 2, h: FONT + PAD * 2 };
-          if (hasCollision(box)) continue;
-          drawnBoxes.push(box);
+          drawnBoxes.push(box); // register so later labels avoid this spot
 
           overlayContext.fillStyle = "rgba(230,235,240,0.88)";
           overlayContext.fillRect(box.x, box.y, box.w, box.h);

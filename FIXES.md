@@ -83,8 +83,17 @@ threaded through LabelCoord → overlay props.
   - Cluster check in PDF-point space (zoom-independent); FONT and HALF_H computed
     per-item inside the draw loop before measureText
 - Background: rgba(230,235,240,0.88), 3px pad, tight behind value text only
-- Collision detection: if two value boxes overlap, the later one is skipped
 - Clamped so value never renders outside canvas bounds
+
+### Fallback positioning — values must NEVER be invisible
+Four candidate positions tried in order; each is clamped to canvas bounds first:
+  1. Below (preferred) — centered horizontally under the label
+  2. Right — after the right/bottom end of the label
+  3. Above — centered horizontally above the label
+  4. Left — to the left of the label
+First collision-free candidate is used. If ALL four collide (dense cluster),
+candidate 1 is drawn anyway. A value must always appear; never silently omitted.
+DO NOT add `continue` / skip logic that can make a value invisible.
 
 ### DO NOT use these abandoned approaches
 - ~~Cover box~~ (white rect over Lx then re-draw) — hides original label, poor UX

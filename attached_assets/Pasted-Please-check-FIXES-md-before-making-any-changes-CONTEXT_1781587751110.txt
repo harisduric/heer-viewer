@@ -1,0 +1,40 @@
+Please check FIXES.md before making any changes.
+
+CONTEXT: A bug was found where L6's value (2'044) in KS is not visible 
+on the drawing at all (data is correct in the sidebar, but the overlay 
+rendering hides/clips it) - likely due to the "value below label" 
+positioning colliding with or being pushed out by the neighboring L5 
+value.
+
+THIS IS NOT AN ISOLATED L6 BUG - it's a symptom of a general problem: 
+the current positioning logic can result in a value being completely 
+invisible (collision-skipped or clipped outside the crop) instead of 
+just being awkwardly placed. This must never happen - a poorly placed 
+visible value is always better than an invisible one.
+
+TASK - implement a general fallback strategy in pdf-viewer.tsx for 
+EVERY label's value rendering:
+1. Try the preferred position first: directly below the "Lx" label 
+   (current approach).
+2. If that position would collide with another already-drawn value box 
+   OR would fall outside the visible crop bounds: try an alternate 
+   position - e.g. directly to the right of the label (the old 
+   rotation-based fallback), or directly above, or with a reduced font 
+   size - checking each alternate in order until one doesn't collide 
+   and stays within crop bounds.
+3. If absolutely no clean position is found after trying alternates, 
+   still draw the value at the LEAST-bad position (smallest overlap / 
+   closest to label) rather than skipping it entirely - the value must 
+   ALWAYS be visible somewhere near its label, never omitted.
+4. Keep this fully generic - applies to all labels in all sections 
+   (BO/SE/KS/DE), not hardcoded for L5/L6 or KS specifically.
+
+VERIFICATION:
+- pnpm --filter @workspace/heer-viewer run typecheck must stay clean
+- Test ALL of BO/SE/KS/DE with PLK_W-BO_G-MV_AL execution description: 
+  go through EVERY single label in the sidebar table and confirm its 
+  value is visibly rendered on the drawing somewhere near the 
+  corresponding "Lx" label - especially L6 in KS, but check all 50 
+  labels across all 4 sections, no exceptions.
+- Do NOT mark as done before this full visual check across all 4 
+  sections and all labels.
