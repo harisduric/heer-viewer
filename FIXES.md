@@ -238,3 +238,23 @@ nested inside `@media print`.
 State updates are batched; reading captureStep from a useCallback closure risks
 stale values across 5 sequential renders. Mutating captureQueueRef.current
 directly is always fresh.
+
+---
+
+## KNOWN OPEN ISSUES
+
+### Per-section page model — tested same-page only
+The per-section page model (§4) is implemented and working. Each BO/SE/KS/DE
+section can be configured with its own PDF page number via the Koordinaten editor
+(page2_crops[section].page, default 2).
+
+**Testing status:**
+- Confirmed working with all four sections on the SAME page (page 2) for both
+  PLK_W-BO_G-MV_AL and LAV_W-BO_G-MV_AL.
+- NOT yet tested with sections actually split across different pages (e.g. BO on
+  page 2, SE/KS/DE on page 3), as would be required for PLK_W-BO_G-MV_IL
+  per the original project notes.
+
+This cross-page split case remains to be verified end-to-end: configure a section
+on a different page in the Koordinaten editor, upload/re-detect labels, confirm the
+viewer fetches the correct page and overlays land in the right position.
