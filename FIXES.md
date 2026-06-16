@@ -146,30 +146,38 @@ handles navigation — CSS centering breakdown at high zoom is not a problem.
 
 ## 8. Print Feature ("Drucken") — CONFIRMED WORKING
 
-Prints 4 pages: BO → SE → KS → DE, A4 landscape.
+Prints 5 pages: Übersicht → BO → SE → KS → DE, A4 landscape.
+BO/SE/KS/DE pages include a compact Label/Maß legend table on the right side.
+Übersicht page has no legend (global dims not tied to Lx labels on the drawing).
 
 ### DO NOT use these abandoned approaches
 - ~~Off-screen PdfViewer portal (position:fixed; top:-9999px)~~: browsers
   do not reliably paint canvas buffers that are far off-screen → blank pages.
 - ~~visibility:hidden on #root~~: still occupies layout space → phantom blank
-  pages appear alongside real ones in the print preview (7 pages instead of 4).
+  pages appear alongside real ones in the print preview.
 
 ### Correct approach: capture on-screen canvases, print as \<img\> tags
 
 **Capture phase:**
-1. Click "Drucken" → captureQueueRef = { step:1, images:[], originalStep:N }
-2. isCapturing=true, step forced to 1 (BO); navigation buttons disabled
+1. Click "Drucken" → captureQueueRef = { step:0, images:[], originalStep:N }
+2. isCapturing=true, step forced to 0 (Übersicht); navigation buttons disabled
 3. Main on-screen PdfViewer receives `onRendered={handlePrintRendered}`
+   - `onRendered` is now in the PdfViewer dep array so the effect re-fires when
+     it changes from undefined → function (needed if user was already on step 0)
+   - `handlePrintRendered` is wrapped in useCallback (empty deps) so its
+     reference is stable and won't re-trigger the effect spuriously
 4. After each render: PdfViewer composites pdfCanvas + overlayCanvas into a
    temp canvas, calls `onRendered(composite.toDataURL('image/png'))`
-5. handlePrintRendered reads captureQueueRef (ref, never stale), pushes dataUrl,
-   advances step 1→2→3→4; after step 4 restores originalStep, sets printImages
+5. handlePrintRendered pushes dataUrl, advances step 0→1→2→3→4;
+   after step 4 restores originalStep, sets printImages (5 items)
 
 **Print phase:**
-6. useEffect on printImages calls `window.print()` after React commits the portal
-   (effects always fire after DOM commit → portal is already mounted)
-7. Portal at document.body contains 4 `<img src={dataUrl}>` with
-   `object-fit: contain` (handles KS portrait on landscape page)
+6. useEffect on printImages (length ≥ 5) calls `window.print()` after React
+   commits the portal (effects always fire after DOM commit)
+7. Portal at document.body:
+   - Page 0 (Übersicht): full-width drawing image, no legend
+   - Pages 1–4 (BO/SE/KS/DE): drawing image + `.heer-pv-legend` sidebar table
+     (110pt wide, 7.5pt font, Label/Maß from parsedExecution.sections[sKey])
 8. `afterprint` event → setPrintImages(null) → portal unmounts
 
 **CSS:**
@@ -186,5 +194,5 @@ nested inside `@media print`.
 
 **Why captureQueueRef instead of state:**
 State updates are batched; reading captureStep from a useCallback closure risks
-stale values across 4 sequential renders. Mutating captureQueueRef.current
+stale values across 5 sequential renders. Mutating captureQueueRef.current
 directly is always fresh.

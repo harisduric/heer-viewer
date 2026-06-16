@@ -1,0 +1,44 @@
+Please check FIXES.md before making any changes.
+
+GOAL: Two improvements to the print feature:
+
+1. Add the Übersicht (overview) page as the FIRST printed page, before 
+   BO/SE/KS/DE. The print output should now be 5 pages in this order: 
+   Übersicht, BO, SE, KS, DE. The Übersicht page should render exactly 
+   like it does on-screen (no value overlays - per the earlier fix 
+   where Übersicht overlays were intentionally removed; the printed 
+   Übersicht page does NOT need the Label/Maß legend table from point 
+   2 below, since the sidebar table for Übersicht is just the global 
+   dimensions and not tied to "Lx" labels on the drawing).
+
+2. As an additional safety/plausibility check, add the sidebar 
+   dimension table (Label/Maß) as a printed legend on each of the 
+   BO/SE/KS/DE printed pages - ONLY in the print output, NOT in the 
+   on-screen viewer (the viewer stays exactly as it is now).
+
+TASK:
+1. Extend the print capture/generation logic to also include the 
+   Übersicht step as page 1 of the print output (currently it only 
+   captures BO/SE/KS/DE). Use the same on-screen-capture-to-image 
+   approach already working for the other 4 sections.
+2. For the BO/SE/KS/DE pages (now pages 2-5), add the corresponding 
+   section's Label/Maß table next to or below the drawing image - 
+   reusing the same data already shown in the on-screen sidebar for 
+   that section. Keep the drawing as the main visual focus; the table 
+   should be a compact legend (e.g. smaller font, two columns 
+   Label/Maß) placed where there's natural empty space on the page.
+3. This must work generically for any schema/section - not hardcoded 
+   for PLK_W-BO_G-MV_AL.
+
+VERIFICATION:
+- pnpm --filter @workspace/heer-viewer run typecheck must stay clean
+- Test with PLK_W-BO_G-MV_AL: click Drucken, confirm print preview now 
+  shows EXACTLY 5 pages in order: Übersicht, BO, SE, KS, DE
+- Confirm Übersicht page renders the drawing correctly (no missing 
+  content, no extra blank pages)
+- Confirm BO/SE/KS/DE pages each show the drawing plus a matching 
+  Label/Maß legend table with correct values
+- Confirm the on-screen viewer (non-print) is UNCHANGED - no legend 
+  table added there
+- Do NOT mark as done before a visual check of the full print preview 
+  (all 5 pages).

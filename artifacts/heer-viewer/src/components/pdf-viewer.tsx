@@ -273,7 +273,7 @@ export function PdfViewer({
     return () => {
       active = false;
     };
-  }, [url, blob, pageNumber, zoom, crop, overlays]);
+  }, [url, blob, pageNumber, zoom, crop, overlays, onRendered]);
 
   return (
     <div

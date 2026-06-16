@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useLocation } from "wouter";
 import { useAppStore } from "../store";
@@ -35,7 +35,7 @@ export default function ViewerPage() {
   const [highlightedLabel, setHighlightedLabel] = useState<string | null>(null);
   // Capture state — ref avoids stale-closure issues across sequential renders.
   const captureQueueRef = useRef<{
-    step: 1 | 2 | 3 | 4;
+    step: 0 | 1 | 2 | 3 | 4;
     images: string[];
     originalStep: number;
   } | null>(null);
@@ -59,14 +59,17 @@ export default function ViewerPage() {
   }, []);
 
   // Called by the main PdfViewer after each section finishes rendering.
-  // Advances BO(1) → SE(2) → KS(3) → DE(4) by mutating captureQueueRef,
-  // then calls window.print() once all 4 images are collected.
-  const handlePrintRendered = (dataUrl: string) => {
+  // Advances Übersicht(0) → BO(1) → SE(2) → KS(3) → DE(4) by mutating
+  // captureQueueRef, then calls window.print() once all 5 images are collected.
+  // Wrapped in useCallback so the reference is stable — PdfViewer now lists
+  // onRendered as a dep, meaning any change from undefined → function triggers
+  // a re-capture (needed when the user starts print while already on step 0).
+  const handlePrintRendered = useCallback((dataUrl: string) => {
     const q = captureQueueRef.current;
     if (!q) return;
     q.images.push(dataUrl);
     if (q.step < 4) {
-      q.step = (q.step + 1) as 2 | 3 | 4;
+      q.step = (q.step + 1) as 1 | 2 | 3 | 4;
       setStep(q.step);
     } else {
       captureQueueRef.current = null;
@@ -75,13 +78,13 @@ export default function ViewerPage() {
       setStep(q.originalStep);
       setPrintImages(imgs);
     }
-  };
+  }, []); // stable — only reads from ref, calls stable React setters
 
-  // Once all 4 images are ready, open the print dialog.
+  // Once all 5 images are ready, open the print dialog.
   // The portal renders the images first (before this effect runs) because
   // React commits DOM changes before firing effects.
   useEffect(() => {
-    if (printImages === null || printImages.length < 4) return;
+    if (printImages === null || printImages.length < 5) return;
     window.print();
     const cleanup = () => setPrintImages(null);
     window.addEventListener("afterprint", cleanup, { once: true });
@@ -238,9 +241,9 @@ export default function ViewerPage() {
               variant="outline"
               size="sm"
               onClick={() => {
-                captureQueueRef.current = { step: 1, images: [], originalStep: step };
+                captureQueueRef.current = { step: 0, images: [], originalStep: step };
                 setIsCapturing(true);
-                setStep(1);
+                setStep(0);
               }}
               disabled={isCapturing}
               className="flex items-center gap-1.5 text-xs h-8 px-3"
@@ -387,9 +390,10 @@ export default function ViewerPage() {
           </Button>
         </div>
       </div>
-      {/* Print portal — 4 captured <img> snapshots, hidden on screen, shown during print.
-          #root uses display:none (not visibility:hidden) so it takes no layout space
-          and produces no phantom pages in the print preview. */}
+      {/* Print portal — 5 captured <img> snapshots (Übersicht + BO/SE/KS/DE),
+          hidden on screen, shown during print.
+          #root uses display:none so it takes no layout space and produces no
+          phantom pages in the print preview. */}
       {printImages !== null &&
         createPortal(
           <>
@@ -417,10 +421,18 @@ export default function ViewerPage() {
                   align-self: flex-start;
                   flex-shrink: 0;
                 }
-                .heer-pv-img-area {
+                .heer-pv-body {
                   flex: 1;
                   min-height: 0;
-                  width: 100%;
+                  display: flex;
+                  flex-direction: row;
+                  gap: 8pt;
+                  align-items: stretch;
+                }
+                .heer-pv-img-area {
+                  flex: 1;
+                  min-width: 0;
+                  min-height: 0;
                   display: flex;
                   align-items: center;
                   justify-content: center;
@@ -431,21 +443,86 @@ export default function ViewerPage() {
                   object-fit: contain;
                   display: block;
                 }
+                .heer-pv-legend {
+                  width: 110pt;
+                  flex-shrink: 0;
+                  font-family: sans-serif;
+                  font-size: 7.5pt;
+                  color: #2D3748;
+                  border-left: 1pt solid #E2E8F0;
+                  padding-left: 6pt;
+                  overflow: hidden;
+                }
+                .heer-pv-legend table {
+                  width: 100%;
+                  border-collapse: collapse;
+                }
+                .heer-pv-legend th {
+                  font-weight: bold;
+                  text-align: left;
+                  padding: 2pt 3pt;
+                  border-bottom: 1pt solid #CBD5E0;
+                  color: #718096;
+                  font-size: 7pt;
+                  text-transform: uppercase;
+                  letter-spacing: 0.04em;
+                }
+                .heer-pv-legend td {
+                  padding: 1.5pt 3pt;
+                  border-bottom: 0.3pt solid #EDF2F7;
+                  line-height: 1.3;
+                }
+                .heer-pv-legend td:last-child {
+                  text-align: right;
+                  font-family: monospace;
+                  font-size: 7pt;
+                }
               }
             `}</style>
             <div id="heer-print-view">
-              {printImages.map((src, idx) => (
-                <div
-                  key={idx}
-                  className="heer-pv-page"
-                  style={{ breakAfter: idx < 3 ? "page" : "auto" }}
-                >
-                  <p className="heer-pv-title">{SECTION_KEYS[idx]}</p>
-                  <div className="heer-pv-img-area">
-                    <img src={src} alt={SECTION_KEYS[idx]} />
+              {printImages.map((src, idx) => {
+                // idx 0 = Übersicht (no legend table)
+                // idx 1–4 = BO / SE / KS / DE (with legend table)
+                const pageTitle = idx === 0 ? "Übersicht" : SECTION_KEYS[idx - 1];
+                const sectionKey = idx > 0 ? SECTION_KEYS[idx - 1] : null;
+                const dims: Record<string, string> = sectionKey
+                  ? ((parsedExecution.sections?.[sectionKey as SectionKey] as Record<string, string>) ?? {})
+                  : {};
+                return (
+                  <div
+                    key={idx}
+                    className="heer-pv-page"
+                    style={{ breakAfter: idx < 4 ? "page" : "auto" }}
+                  >
+                    <p className="heer-pv-title">{pageTitle}</p>
+                    <div className="heer-pv-body">
+                      <div className="heer-pv-img-area">
+                        <img src={src} alt={pageTitle} />
+                      </div>
+                      {sectionKey !== null && Object.keys(dims).length > 0 && (
+                        <div className="heer-pv-legend">
+                          <table>
+                            <thead>
+                              <tr>
+                                <th>Label</th>
+                                <th style={{ textAlign: "right" }}>Maß</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {Object.entries(dims).map(([label, value]) => (
+                                <tr key={label}>
+                                  <td>{label}</td>
+                                  <td>{value}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </>,
           document.body
