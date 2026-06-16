@@ -1,0 +1,42 @@
+Please check FIXES.md before making any changes.
+
+CHECKPOINT NOTE: current state is committed at 6e8a2f4. If this 
+experiment doesn't produce good results, we will roll back to that 
+commit - so feel free to try this change directly.
+
+GOAL: Currently, overlay values are positioned based on rotation: to 
+the right of the "Lx" label for rotation=0, below the label for 
+rotation=90. The user wants to try positioning ALL values directly 
+BELOW their "Lx" label, regardless of rotation - observation is that 
+most labels already have good free space directly underneath them in 
+the drawing.
+
+TASK:
+In pdf-viewer.tsx, change the value positioning logic so that for 
+EVERY label (regardless of rotation=0 or rotation=90), the value text 
+is placed directly below the "Lx" label's anchor point - using the 
+label's height/font size to compute the vertical offset (label bottom 
++ small gap), centered horizontally under the label.
+
+For rotation=90 labels (currently already placed below), this should 
+look similar to before. For rotation=0 labels (currently placed to the 
+right), this changes their position to below instead.
+
+Keep using the existing cluster-detection font-size logic (18px 
+normal / 13px clustered) - clusters may need to be re-evaluated since 
+proximity changes when everything is "below" instead of "right or 
+below".
+
+VERIFICATION:
+- pnpm --filter @workspace/heer-viewer run typecheck must stay clean
+- Test Steps BO, SE, KS, DE with PLK_W-BO_G-MV_AL execution description:
+  - All values now appear below their respective "Lx" label
+  - Check especially: does this cause new overlaps with red dimension 
+    lines, neighboring "Lx" labels, or other values - especially in 
+    horizontal label rows like L2/L3/L4 in BO/SE (where labels are 
+    side-by-side, so "below" might mean values from neighboring labels 
+    collide vertically with each other or with the drawing itself)
+- Report clearly: does this look BETTER or WORSE than the current 
+  right/below-based positioning? Be honest in the assessment - this is 
+  an experiment, not a guaranteed improvement.
+- Do NOT mark as done before a visual check.

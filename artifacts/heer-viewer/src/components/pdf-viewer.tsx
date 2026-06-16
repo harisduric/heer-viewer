@@ -163,19 +163,20 @@ export function PdfViewer({
             : FONT_LARGE
         );
 
-        // ── Draw value labels next to their Lx anchor ───────────────────────
-        // The original Lx text on the PDF is left completely untouched.
+        // ── Draw value labels BELOW their Lx anchor ─────────────────────────
+        // The original Lx text in the PDF is left completely untouched.
         // Anchor point (rawCx, rawCy) is the baseline-left corner of the Lx glyph.
         //
-        // For horizontal labels (rotation=0):
-        //   - rawCx is the LEFT edge of the string; text extends rightward.
-        //   - Value placed after the right end: vx = rawCx + labelWidthPx + GAP
+        // ALL labels (rotation=0 and rotation=90) place the value BELOW the anchor:
+        //   vy = rawCy + GAP + HALF_H
+        //
+        // For rotation=0 (horizontal labels):
+        //   - rawCx is the LEFT edge; the label extends rightward by labelWidthPx.
+        //   - Value is centered under the label: vx = rawCx + labelWidthPx/2 − tw/2
         //
         // For rotation=90° CCW labels:
-        //   - The PDF baseline advances in +y_pdf (upward PDF space), which after
-        //     the Y-flip becomes -y_screen (upward in screen space).
-        //   - rawCy IS the BOTTOM edge of the visible Lx string; text extends upward.
-        //   - Value placed just below rawCy: vy = rawCy + GAP   (no labelWidthPx needed)
+        //   - rawCy IS the BOTTOM edge of the visible Lx string in screen space.
+        //   - Centering: vx = rawCx (the label is a narrow vertical stroke at rawCx).
         //
         // Collision detection: skip any value box that overlaps an already-drawn one.
 
@@ -205,19 +206,15 @@ export function PdfViewer({
           const labelWidthPx =
             overlay.textWidth != null ? overlay.textWidth * zoom : LABEL_W_FALLBACK;
 
-          // Place value after the label end + GAP
-          let vx: number;
-          let vy: number;
-          if (isRotated) {
-            // rawCy is already the bottom of the Lx string — text goes upward.
-            // Place value just below that bottom edge.
-            vx = rawCx;
-            vy = rawCy + GAP + HALF_H;
-          } else {
-            // rawCx is the left edge — skip past the full string width then add gap.
-            vx = rawCx + labelWidthPx + GAP;
-            vy = rawCy;
-          }
+          // Place value BELOW the label anchor + GAP, for all rotations.
+          // vy: same formula for both — rawCy is the bottom of the visible glyph
+          //     for rotation=90, and the baseline (≈ bottom of cap-height) for rotation=0.
+          // vx: center under the label.
+          //   - rotation=0: label center = rawCx + labelWidthPx/2
+          //   - rotation=90: label is a narrow vertical stroke; center ≈ rawCx
+          const labelCenterX = isRotated ? rawCx : rawCx + labelWidthPx / 2;
+          let vx = labelCenterX - tw / 2;
+          let vy = rawCy + GAP + HALF_H;
 
           // Clamp so value never renders outside the visible canvas
           vx = Math.max(PAD, Math.min(vx, pdfCanvas.width - tw - PAD));
