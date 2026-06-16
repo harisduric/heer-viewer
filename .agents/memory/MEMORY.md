@@ -2,3 +2,5 @@
 - [Schema page route upper limit](schema-page-limit.md) — `/api/schema/:name/page/:num` had a hard cap at page 10; raised to 200 for Hebegurt multi-page support.
 - [ANO_CODE normalization regex false-positive](ano-code-trailing-field.md) — use `(?<=\d)` not `(?<=[^\n])` in parsePdf normalization; broad lookbehind splits "ANO_CODE" at "DE", destroying all ANO_CODE entries.
 - [PdfViewer render loop via unstable overlays prop](pdfviewer-render-loop.md) — overlays default `[]` and computed arrays must be stable refs; unstable deps cause infinite setLoading(true) cycles and stuck spinners.
+- [PdfViewer fitToWidth pattern](pdf-viewer-fit-to-width.md) — scale from actual native page width; never assume 595pt A4 for schema PDFs.
+- [JSX const declaration error](jsx-const-in-expression.md) — `const` inside a JSX `{}` expression is a Babel parse error even when tsc accepts it; hoist to component body.

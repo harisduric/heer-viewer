@@ -1,0 +1,38 @@
+Please check FIXES.md before making any changes.
+
+BUG: The previous "scrollbar reserve" fix (containerWidth - 56) did 
+NOT resolve the clipping. Pages in the Hebegurt step are still cut off 
+on BOTH left and right edges - this looks like a significant overflow 
+(more than a few pixels), not just a scrollbar-width issue.
+
+TASK - DIAGNOSE WITH ACTUAL NUMBERS, do not guess again:
+1. Log the actual computed values when rendering a Hebegurt page: 
+   containerWidth (the ref's clientWidth), the computed pageW/hebScale, 
+   and the actual rendered canvas width in pixels.
+2. Compare: does the rendered canvas width actually fit within 
+   containerWidth, or is it wider? By how much?
+3. Check the CSS on the scroll container and page wrappers for any 
+   conflicting width/min-width/flex properties that could force a wider 
+   layout than intended (e.g. a parent flex container with no 
+   flex-wrap, or a sibling element pushing width).
+4. Check if "items-center" with a fixed pixel width on the page wrapper 
+   could be exceeding the parent's actual available width because the 
+   parent itself has horizontal padding/margin not accounted for in 
+   the containerWidth measurement (e.g. measuring the wrong ref).
+5. Report the EXACT numbers found (containerWidth vs rendered width) 
+   before making any further code changes.
+
+Once the actual discrepancy is identified with real numbers, fix the 
+calculation so rendered page width never exceeds the container's 
+visible width, with pages centered and fully visible (left and right 
+edges both shown, e.g. "H05 SE_AL_DIAG" label fully visible at left 
+edge of SE/KS/DE diagonal pages).
+
+VERIFICATION:
+- pnpm --filter @workspace/heer-viewer run typecheck must stay clean
+- Test Hebegurte step with LAV_W-BO_G-MV_AL_-_0.pdf: confirm pages are 
+  NOT clipped on either edge - full page content visible, including 
+  left-edge labels like "H05 SE_AL_DIAG"
+- Report the actual measured numbers that confirmed the fix
+- Do NOT mark as done before a visual check with real measurements, 
+  not assumptions.

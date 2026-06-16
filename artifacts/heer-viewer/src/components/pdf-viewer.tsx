@@ -25,10 +25,17 @@ interface PdfViewerProps {
   blob?: Blob;
   pageNumber?: number;
   scale?: number;
+  /** When provided (and no crop), scale is computed as fitToWidth / nativePageWidth
+   *  so the canvas exactly fills this width regardless of the PDF page's native size.
+   *  Takes priority over the scale prop. */
+  fitToWidth?: number;
   crop?: { cropX: number; cropY: number; cropW: number; cropH: number } | null;
   overlays?: { x: number; y: number; label: string; value: string; rotation?: number; textWidth?: number }[];
   interactive?: boolean;
   onRendered?: (dataUrl: string) => void;
+  /** Fires once after each render with the actual canvas pixel dimensions.
+   *  Stored in a ref inside PdfViewer — safe to pass an unstable closure. */
+  onDimensions?: (dims: { widthPx: number; heightPx: number }) => void;
 }
 
 export function PdfViewer({
@@ -36,10 +43,12 @@ export function PdfViewer({
   blob,
   pageNumber = 1,
   scale = 1,
+  fitToWidth,
   crop,
   overlays = EMPTY_OVERLAYS,
   interactive = false,
   onRendered,
+  onDimensions,
 }: PdfViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const pdfCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -48,13 +57,20 @@ export function PdfViewer({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Keep a ref to onDimensions so it can be an unstable closure in the caller
+  // without triggering the render effect.
+  const onDimensionsRef = useRef(onDimensions);
+  useEffect(() => { onDimensionsRef.current = onDimensions; }, [onDimensions]);
+
   const [zoom, setZoom] = useState(scale);
   const [pan, setPan] = useState({ x: 0, y: 0 });
 
-  // Sync external scale prop into zoom (e.g. when container resizes)
+  // Sync external scale prop into zoom (e.g. when container resizes).
+  // Skip sync when fitToWidth is active — renderZoom is computed from the page
+  // viewport, not from the scale prop.
   useEffect(() => {
-    setZoom(scale);
-  }, [scale]);
+    if (fitToWidth == null) setZoom(scale);
+  }, [scale, fitToWidth]);
 
   useGesture(
     {
@@ -100,7 +116,19 @@ export function PdfViewer({
 
         const pdf = await pdfjsLib.getDocument({ data: pdfData }).promise;
         const page = await pdf.getPage(pageNumber);
-        const viewport = page.getViewport({ scale: zoom });
+
+        // viewport at scale=1 gives native page dimensions in CSS pixels (= PDF pts).
+        // Used for yAdjust correction and to compute fitToWidth scale.
+        const viewport1 = page.getViewport({ scale: 1 });
+
+        // renderZoom: when fitToWidth is provided (no crop), derive scale from the
+        // page's actual native width so the canvas fills exactly fitToWidth pixels
+        // regardless of the PDF page dimensions (avoids assuming 595pt / A4 portrait).
+        const renderZoom = (fitToWidth != null && !crop)
+          ? fitToWidth / viewport1.width
+          : zoom;
+
+        const viewport = page.getViewport({ scale: renderZoom });
 
         const pdfCanvas = pdfCanvasRef.current;
         const overlayCanvas = overlayCanvasRef.current;
@@ -113,16 +141,19 @@ export function PdfViewer({
         let offsetY = 0;
 
         if (crop) {
-          pdfCanvas.width = crop.cropW * zoom;
-          pdfCanvas.height = crop.cropH * zoom;
-          offsetX = -crop.cropX * zoom;
-          offsetY = -crop.cropY * zoom;
+          pdfCanvas.width = Math.round(crop.cropW * renderZoom);
+          pdfCanvas.height = Math.round(crop.cropH * renderZoom);
+          offsetX = -crop.cropX * renderZoom;
+          offsetY = -crop.cropY * renderZoom;
         } else {
-          pdfCanvas.width = viewport.width;
-          pdfCanvas.height = viewport.height;
+          pdfCanvas.width = Math.round(viewport.width);
+          pdfCanvas.height = Math.round(viewport.height);
         }
         overlayCanvas.width = pdfCanvas.width;
         overlayCanvas.height = pdfCanvas.height;
+
+        // Report actual canvas pixel dimensions to the parent (stable ref, no effect dep).
+        onDimensionsRef.current?.({ widthPx: pdfCanvas.width, heightPx: pdfCanvas.height });
 
         const renderTask = page.render({
           canvasContext: context,
@@ -136,7 +167,6 @@ export function PdfViewer({
 
         // Server detection used pageH=842 as fallback (pdf-parse vp.height is undefined).
         // pdfjs-dist returns the real height. Apply correction so overlays land correctly.
-        const viewport1 = page.getViewport({ scale: 1 });
         const naturalPageH = viewport1.height;
         const DETECT_PAGE_H = 842;
         const yAdjust = naturalPageH - DETECT_PAGE_H;
@@ -159,8 +189,8 @@ export function PdfViewer({
           .filter((o) => Number.isFinite(o.x) && Number.isFinite(o.y))
           .map((overlay) => {
             const correctedY = overlay.y + yAdjust;
-            const rawCx = overlay.x * zoom + offsetX;
-            const rawCy = correctedY * zoom + offsetY;
+            const rawCx = overlay.x * renderZoom + offsetX;
+            const rawCy = correctedY * renderZoom + offsetY;
             return { overlay, rawCx, rawCy };
           });
 
@@ -216,9 +246,9 @@ export function PdfViewer({
           const isRotated = !!overlay.rotation;
 
           // labelWidthPx: advance width of the Lx glyph in canvas px.
-          // overlay.textWidth is in PDF pts; multiply by zoom to convert.
+          // overlay.textWidth is in PDF pts; multiply by renderZoom to convert.
           const labelWidthPx =
-            overlay.textWidth != null ? overlay.textWidth * zoom : LABEL_W_FALLBACK;
+            overlay.textWidth != null ? overlay.textWidth * renderZoom : LABEL_W_FALLBACK;
 
           // Horizontal centre of the Lx glyph in canvas px.
           // rotation=90: label is a narrow vertical stroke — centre ≈ rawCx.
@@ -305,7 +335,7 @@ export function PdfViewer({
         renderTaskRef.current = null;
       }
     };
-  }, [url, blob, pageNumber, zoom, crop, overlays, onRendered]);
+  }, [url, blob, pageNumber, zoom, fitToWidth, crop, overlays, onRendered]);
 
   return (
     <div

@@ -47,6 +47,9 @@ export default function ViewerPage() {
   const [isCapturing, setIsCapturing] = useState(false);
   const [hebegurtCaptureTick, setHebegurtCaptureTick] = useState(0);
   const [printImages, setPrintImages] = useState<string[] | null>(null);
+  // Actual canvas heights (px) reported by PdfViewer after rendering each Hebegurt page.
+  // Keyed by page number. Reset when schema changes so stale heights don't persist.
+  const [hebPageHeights, setHebPageHeights] = useState<Record<number, number>>({});
 
   // Measure the PDF area so we can scale each crop to fit both dimensions.
   const pdfAreaRef = useRef<HTMLDivElement>(null);
@@ -158,6 +161,11 @@ export default function ViewerPage() {
         )
       : [];
 
+  // Reset Hebegurt page heights when the schema changes so stale heights don't persist.
+  useEffect(() => {
+    setHebPageHeights({});
+  }, [schemaName]);
+
   useEffect(() => {
     setHighlightedLabel(null);
   }, [step]);
@@ -262,6 +270,13 @@ export default function ViewerPage() {
       ? ((parsedExecution.sections?.[SECTION_KEYS[step - 1] as SectionKey] as Record<string, string>) ?? {})
       : {};
 
+  // Width (px) each Hebegurt page canvas should fill.
+  // Reserve 56 px: 32 for p-4 padding + 24 for the vertical scrollbar that
+  // appears on Windows/Linux when 4 tall pages exceed the container height.
+  // PdfViewer.fitToWidth derives scale from the actual native page width so this
+  // works regardless of whether the schema pages are A4, landscape, or A3.
+  const hebFitToWidth = Math.max(100, containerWidth - 56);
+
   return (
     <Layout>
       <div className="flex flex-col h-[calc(100vh-56px-32px)] overflow-hidden">
@@ -339,32 +354,22 @@ export default function ViewerPage() {
                     </div>
                   ) : (
                     hebegurtPageNums.map((pNum) => {
-                      // containerWidth is the pdfAreaRef content-rect width from
-                      // ResizeObserver.  The scroll container inside adds p-4 (32 px
-                      // total horizontal padding).  On Windows/Linux a vertical
-                      // scrollbar also consumes ~17 px.  Without accounting for the
-                      // scrollbar, `items-center` centres an over-wide page wrapper
-                      // and clips ~8 px on each side.
-                      //
-                      // Reserve 56 px total: 32 (p-4 padding) + 24 (scrollbar gutter).
-                      // This keeps pages fully visible regardless of scrollbar width.
-                      //
-                      // The explicit height is required: without it the wrapper has
-                      // height:auto and PdfViewer's `h-full` collapses to 0 px.
-                      const SCROLL_RESERVE = 56;
-                      const hebScale = Math.min(
-                        1.8,
-                        Math.max(0.5, (containerWidth - SCROLL_RESERVE) / 595),
-                      );
-                      const pageW = Math.round(595 * hebScale);
-                      const pageH = Math.round(842 * hebScale);
+                      // Placeholder height while PdfViewer hasn't yet reported actual
+                      // canvas dimensions.  Uses A4-portrait aspect ratio (595:842).
+                      // Once onDimensions fires the wrapper height is updated exactly.
+                      const wrapperH = hebPageHeights[pNum] ?? Math.round(hebFitToWidth * 842 / 595);
                       return (
-                        <div key={pNum} style={{ width: pageW, height: pageH, flexShrink: 0 }}>
+                        <div key={pNum} style={{ width: hebFitToWidth, height: wrapperH, flexShrink: 0 }}>
                           <PdfViewer
                             url={getGetSchemaPageUrl(schemaName, pNum)}
                             pageNumber={1}
-                            scale={hebScale}
+                            fitToWidth={hebFitToWidth}
                             interactive={false}
+                            onDimensions={(dims) => {
+                              setHebPageHeights(prev =>
+                                prev[pNum] === dims.heightPx ? prev : { ...prev, [pNum]: dims.heightPx },
+                              );
+                            }}
                           />
                         </div>
                       );
