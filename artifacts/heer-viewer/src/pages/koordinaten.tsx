@@ -231,29 +231,52 @@ export default function KoordinatenPage() {
   useEffect(() => {
     if (!selectedSchema) return;
     let cancelled = false;
-    fetch(`/api/schema/${encodeURIComponent(selectedSchema)}/page/${pageNum}?t=${Date.now()}`)
+    // Capture the page we intend to fetch so the .then() callback can verify
+    // it is still the current page before committing to setPdfData.
+    const intendedPage = pageNum;
+    console.log(`[FETCH] effect fires — schema=${selectedSchema} pageNum=${intendedPage} activeSection=${activeSection}`);
+    fetch(`/api/schema/${encodeURIComponent(selectedSchema)}/page/${intendedPage}?t=${Date.now()}`)
       .then(async (r) => {
+        console.log(`[FETCH] response ok=${r.ok} status=${r.status} cancelled=${cancelled} for page=${intendedPage}`);
         if (!r.ok || cancelled) return;
         const blob = await r.blob();
-        if (!cancelled) setPdfData(new Uint8Array(await blob.arrayBuffer()));
+        if (!cancelled) {
+          const arr = new Uint8Array(await blob.arrayBuffer());
+          console.log(`[FETCH] calling setPdfData byteLength=${arr.byteLength} for page=${intendedPage}`);
+          setPdfData(arr);
+        }
       })
       .catch(console.error);
     return () => { cancelled = true; };
-    // activeSection is listed explicitly so switching section tabs always re-fetches the
-    // correct page even if the derived pageNum value appears unchanged between renders.
   }, [selectedSchema, pageNum, activeSection]);
 
   // ── Render PDF canvas ──────────────────────────────────────────────────────
+  // FIX: pass pdfData.slice() to getDocument so pdfjs does NOT transfer/neuter
+  // the original buffer. Without slice(), pdfjs transfers the ArrayBuffer to its
+  // worker thread, setting pdfData.byteLength=0 in React state — every subsequent
+  // render then silently fails with an empty {} error.
+  // FIX: check `cancelled` before touching the canvas (width/height reset clears
+  // the canvas). Without this, a stale render IIFE can overwrite a fresh correct
+  // render if it finishes last.
 
   useEffect(() => {
     if (!pdfData || !canvasRef.current) return;
+    console.log(`[RENDER] effect fires — pdfData.byteLength=${pdfData.byteLength}`);
+    // Safety net: if the buffer was neutered by an older code path, skip silently.
+    if (pdfData.byteLength === 0) {
+      console.warn('[RENDER] pdfData buffer is detached — skipping');
+      return;
+    }
     let cancelled = false;
     (async () => {
       try {
-        const pdf  = await pdfjsLib.getDocument({ data: pdfData }).promise;
+        // slice() gives pdfjs its own independent copy — the original in React
+        // state is never transferred/neutered.
+        const pdf  = await pdfjsLib.getDocument({ data: pdfData.slice() }).promise;
         const page = await pdf.getPage(1);
         const vpNat = page.getViewport({ scale: 1.0 });
-        if (!cancelled) setPdfDims({ w: vpNat.width, h: vpNat.height });
+        if (cancelled) return;
+        setPdfDims({ w: vpNat.width, h: vpNat.height });
 
         // PERMANENT FIX: scale derived from ResizeObserver containerWidth, not window.innerWidth
         const cw = containerWidthRef.current;
@@ -269,16 +292,23 @@ export default function KoordinatenPage() {
           scale = LABEL_SCALE;
         }
 
-        if (!cancelled) { setRenderScale(scale); renderScaleRef.current = scale; }
+        if (cancelled) return;
+        setRenderScale(scale);
+        renderScaleRef.current = scale;
 
         const vp = page.getViewport({ scale });
+        // CRITICAL: check cancelled before resetting canvas — assigning canvas.width
+        // clears the canvas and would erase a correct render from a newer IIFE.
+        if (cancelled) return;
         const canvas = canvasRef.current!;
         canvas.width  = vp.width;
         canvas.height = vp.height;
         const ctx = canvas.getContext("2d")!;
+        console.log(`[RENDER] starting page.render scale=${scale.toFixed(3)}`);
         await page.render({ canvasContext: ctx, canvas, viewport: vp }).promise;
+        console.log('[RENDER] page.render complete ✓');
       } catch (e) {
-        console.error(e);
+        console.error('[RENDER] error:', e);
       }
     })();
     return () => { cancelled = true; };

@@ -5,3 +5,5 @@
 - [PdfViewer fitToWidth pattern](pdf-viewer-fit-to-width.md) — scale from actual native page width; never assume 595pt A4 for schema PDFs.
 - [JSX const declaration error](jsx-const-in-expression.md) — `const` inside a JSX `{}` expression is a Babel parse error even when tsc accepts it; hoist to component body.
 - [Per-section page model](per-section-page-model.md) — each BO/SE/KS/DE crop can be on its own PDF page; stored as page2_crops[sec].page (default 2).
+- [pdfjs buffer transfer](pdfjs-buffer-transfer.md) — getDocument({data: uint8Array}) neuters the buffer via worker postMessage; always pass .slice() to preserve React state.
+- [Render IIFE cancelled checks](render-iife-cancelled.md) — canvas.width resets the canvas; check cancelled before it or stale IIFEs overwrite correct renders.

@@ -1,0 +1,47 @@
+Please check FIXES.md before making any changes.
+
+BUG (still present despite the previous "activeSection in deps" fix): 
+The PDF preview page does NOT switch correctly when sections are 
+configured on DIFFERENT pages. 
+
+Reproduction steps (confirmed by user):
+1. Set BO=page 2, SE=3, KS=3, DE=3
+2. Click the BO tab → preview correctly shows page 2 with the BO 
+   rectangle (this part works)
+3. Click the SE tab → expected: preview switches to page 3, showing 
+   only the SE rectangle (or SE along with other page-3 rectangles, 
+   per the existing same-page filter logic) - ACTUAL: the preview does 
+   NOT switch to page 3, it appears stuck.
+4. The user confirms: page switching only seems to "work" when ALL 
+   FOUR sections (BO/SE/KS/DE) are set to the SAME page number. The 
+   moment sections are split across different pages, the preview fails 
+   to navigate freely between those pages when switching tabs.
+
+TASK - DIAGNOSE WITH ACTUAL TRACE/LOGS, not theory:
+1. Add temporary console logging in the PDF-fetch effect in 
+   koordinaten.tsx: log activeSection, the derived pageNum for that 
+   section, and confirm whether the fetch actually fires (and with 
+   which page number) every time the user clicks a different tab.
+2. Reproduce exactly the steps above (BO=2, SE/KS/DE=3, click BO then 
+   SE) and capture what the logs show. Does the fetch effect even 
+   trigger when going from BO (page 2) to SE (page 3)? If yes, does it 
+   request page 3 or page 2? If the effect doesn't trigger at all, why 
+   not (check if some other state/condition is gating it - e.g. a 
+   "page already loaded" cache check that doesn't account for the 
+   needed page actually being different)?
+3. Report the exact trace findings before fixing anything further.
+
+Once the real cause is found (not a repeat of the previous fix), apply 
+a fix that allows TRULY independent navigation: clicking any section 
+tab must always show that section's configured page, regardless of 
+what other sections are configured to, and regardless of click order.
+
+VERIFICATION:
+- pnpm --filter @workspace/heer-viewer run typecheck must stay clean
+- Test with PLK_W-BO_G-OV_IL: set BO=2, SE=3, KS=3, DE=3. Click BO → 
+  page 2 shown. Click SE → page 3 shown (not stuck on page 2). Click KS 
+  → page 3 shown. Click DE → page 3 shown. Click BO again → back to 
+  page 2. Confirm each transition actually re-renders the correct page 
+  content, not just a cached/stale view.
+- Do NOT mark as done before a visual check confirming this EXACT 
+  reproduction sequence works, with real screenshots at each step.
