@@ -239,7 +239,9 @@ export default function KoordinatenPage() {
       })
       .catch(console.error);
     return () => { cancelled = true; };
-  }, [selectedSchema, pageNum]);
+    // activeSection is listed explicitly so switching section tabs always re-fetches the
+    // correct page even if the derived pageNum value appears unchanged between renders.
+  }, [selectedSchema, pageNum, activeSection]);
 
   // ── Render PDF canvas ──────────────────────────────────────────────────────
 

@@ -1,0 +1,43 @@
+Please check FIXES.md before making any changes.
+
+BUG: In the Koordinaten editor's "BO/SE/KS/DE — Crop-Editor" view, when 
+a section's configured page differs from another section's page (e.g. 
+PLK_W-BO_G-OV_IL: BO=page 2, but SE/KS/DE=page 3), clicking on the 
+SE/KS/DE tab does not correctly switch the PDF page preview to page 3. 
+This makes it impossible to position/draw the crop rectangles for 
+SE/KS/DE, since the admin can't see page 3's content to place them on.
+
+CONTEXT: Each section tab (SE/KS/BO/DE) already has its own page-number 
+input (confirmed working - shows 3/3/2/3 correctly for this schema). 
+The bug is specifically in the PDF preview/canvas not re-fetching and 
+re-rendering the correct page when switching to a section whose page 
+differs from the currently displayed one.
+
+TASK:
+1. In koordinaten.tsx, when the admin clicks a section tab (SE/KS/BO/
+   DE), ensure the PDF preview re-fetches and re-renders the PAGE 
+   configured for THAT section (cropPages[section]) - not whatever 
+   page happens to currently be loaded. This should work symmetrically 
+   in both directions: switching from a page-2 section to a page-3 
+   section, and back again.
+2. Confirm the crop rectangles shown on the canvas continue to only 
+   display the ones whose configured page matches the currently 
+   displayed page (this part already works, per the previous fix) - 
+   don't break that.
+3. After switching, the admin should be able to drag/resize the active 
+   section's crop rectangle directly on the now-correctly-displayed 
+   page.
+
+VERIFICATION:
+- pnpm --filter @workspace/heer-viewer run typecheck must stay clean
+- Test with PLK_W-BO_G-OV_IL (BO=page2, SE/KS/DE=page3): 
+  - Click BO tab → page 2 preview shown, BO rectangle visible/editable
+  - Click SE tab → preview switches to page 3, SE rectangle 
+    visible/editable on page 3 content
+  - Click KS tab, then DE tab → same correct page-3 switching
+  - Click back to BO tab → correctly switches back to page 2
+- Re-test PLK_W-BO_G-MV_AL (all sections page 2) - confirm no 
+  regression, tab switching still works smoothly when all on the same 
+  page.
+- Do NOT mark as done before a visual check of switching between 
+  page-2 and page-3 sections.
