@@ -339,11 +339,23 @@ export default function ViewerPage() {
                     </div>
                   ) : (
                     hebegurtPageNums.map((pNum) => {
-                      // Give each PdfViewer an explicit pixel height so `h-full`
-                      // inside PdfViewer resolves correctly.  Without a fixed
-                      // height on the parent the wrapper has height:auto and
-                      // `h-full` computes to 0 px, collapsing the canvas.
-                      const hebScale = Math.min(1.8, Math.max(0.5, (containerWidth - 32) / 595));
+                      // containerWidth is the pdfAreaRef content-rect width from
+                      // ResizeObserver.  The scroll container inside adds p-4 (32 px
+                      // total horizontal padding).  On Windows/Linux a vertical
+                      // scrollbar also consumes ~17 px.  Without accounting for the
+                      // scrollbar, `items-center` centres an over-wide page wrapper
+                      // and clips ~8 px on each side.
+                      //
+                      // Reserve 56 px total: 32 (p-4 padding) + 24 (scrollbar gutter).
+                      // This keeps pages fully visible regardless of scrollbar width.
+                      //
+                      // The explicit height is required: without it the wrapper has
+                      // height:auto and PdfViewer's `h-full` collapses to 0 px.
+                      const SCROLL_RESERVE = 56;
+                      const hebScale = Math.min(
+                        1.8,
+                        Math.max(0.5, (containerWidth - SCROLL_RESERVE) / 595),
+                      );
                       const pageW = Math.round(595 * hebScale);
                       const pageH = Math.round(842 * hebScale);
                       return (
