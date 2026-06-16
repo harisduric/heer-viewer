@@ -5,6 +5,32 @@ Do not change any of these without re-testing the full viewer flow.
 
 ---
 
+## CONFIRMED BASELINE — ready for production pilot test
+
+Features confirmed working as of this checkpoint:
+
+1. **Below-label value positioning with collision fallback** (§5)
+   - Values placed below their Lx label by default (centered horizontally)
+   - 4-candidate fallback waterfall: below → right → above → left
+   - Each candidate clamped to canvas bounds before collision check
+   - If all 4 candidates collide, candidate 1 is drawn anyway — a value
+     is NEVER silently omitted
+   - Adaptive font: FONT_LARGE=18px / FONT_SMALL=13px based on cluster
+     proximity (CLUSTER_RADIUS=60 PDF pts)
+
+2. **5-page print output** (§8)
+   - Page 1: Übersicht — full drawing, no overlays, no legend table
+   - Pages 2–5: BO / SE / KS / DE — drawing + compact Label/Maß legend
+     table (110pt right-side column, 7.5pt font)
+   - Legend data sourced from parsedExecution.sections[sKey]
+   - Works generically for any schema (not hardcoded for PLK_W-BO_G-MV_AL)
+
+3. **Multi-page execution description parsing** (§6)
+   - Handles fused page-break records in pdf-parse output
+   - Normalises line terminators + inserts \n before section prefixes
+
+---
+
 ## 1. PDF Canvas Scaling (Koordinaten Editor)
 ALWAYS use ResizeObserver on the container div ref.
 Scale = containerDiv.clientWidth / pageWidthInPoints
