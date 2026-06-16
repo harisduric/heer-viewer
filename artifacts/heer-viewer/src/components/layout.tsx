@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { IconH, IconM } from "./icons";
+import { IconM } from "./icons";
 import { ReactNode, useState } from "react";
 import { Menu, X } from "lucide-react";
 
@@ -25,7 +25,7 @@ export function Layout({ children }: { children: ReactNode }) {
           {sidebarOpen ? <X /> : <Menu />}
         </button>
         <div className="flex items-center gap-4">
-          <IconH className="text-primary" />
+          <img src="/images/heer-logo.png" alt="B. Heer AG" style={{ height: "28px", width: "auto" }} />
           <div className="w-[1px] h-8 bg-[#CBD5E0]"></div>
           <div className="flex items-center text-primary text-[18px] tracking-[0.08em]">
             <span className="font-extrabold">HEER</span>
