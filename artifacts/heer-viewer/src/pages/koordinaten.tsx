@@ -179,6 +179,8 @@ export default function KoordinatenPage() {
   const [hebegurtStartPage, setHebegurtStartPage] = useState<number | "">("");
   // Per-section PDF page number (1-indexed). Defaults to 2 (backward compat).
   const [cropPages, setCropPages] = useState<Record<SectionKey, number>>({ SE: 2, KS: 2, BO: 2, DE: 2 });
+  // Per-section enabled flag. Defaults to true (backward compat — existing schemas show all sections).
+  const [cropEnabled, setCropEnabled] = useState<Record<SectionKey, boolean>>({ SE: true, KS: true, BO: true, DE: true });
   const [saved, setSaved] = useState(false);
   const canvasRef  = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -344,6 +346,13 @@ export default function KoordinatenPage() {
         BO: cropMap["BO"]?.page ?? 2,
         DE: cropMap["DE"]?.page ?? 2,
       });
+      // Load per-section enabled flags (default true for backward compat)
+      setCropEnabled({
+        SE: (cropMap["SE"] as { enabled?: boolean } | undefined)?.enabled !== false,
+        KS: (cropMap["KS"] as { enabled?: boolean } | undefined)?.enabled !== false,
+        BO: (cropMap["BO"] as { enabled?: boolean } | undefined)?.enabled !== false,
+        DE: (cropMap["DE"] as { enabled?: boolean } | undefined)?.enabled !== false,
+      });
     } else if (isPage2Labels && labelSection) {
       // Load this section's crop so we can render the zoomed view
       const cropMap = (cd["page2_crops"] ?? {}) as Record<string, CropValues & { page?: number }>;
@@ -451,10 +460,10 @@ export default function KoordinatenPage() {
     const cd = JSON.parse(JSON.stringify(coordData)) as Record<string, unknown>;
 
     if (isPage2) {
-      // Include the per-section page number alongside cropX/Y/W/H
+      // Include the per-section page number and enabled flag alongside cropX/Y/W/H
       const cropsWithPages: Record<string, unknown> = {};
       for (const sec of SECTIONS) {
-        cropsWithPages[sec] = { ...crops[sec], page: cropPages[sec] ?? 2 };
+        cropsWithPages[sec] = { ...crops[sec], page: cropPages[sec] ?? 2, enabled: cropEnabled[sec] };
       }
       cd["page2_crops"] = cropsWithPages;
     } else if (isPage2Labels && labelSection) {
@@ -595,28 +604,41 @@ export default function KoordinatenPage() {
         {/* ── CROP EDITOR info panel ── */}
         {isPage2 && selectedSchema && hasPdf && (
           <div className="mb-4 bg-white rounded-xl border border-[#E2E8F0] p-4">
-            <div className="flex gap-3 mb-3 flex-wrap items-center">
+            <div className="flex gap-3 mb-3 flex-wrap items-start">
               {SECTIONS.map((s) => {
                 const meta = SECTION_META[s];
+                const isEnabled = cropEnabled[s];
                 return (
-                  <div key={s} className="flex items-center gap-1">
+                  <div key={s} className="flex flex-col items-center gap-1">
                     <button
-                      onClick={() => setActiveSection(s)}
-                      style={{ borderColor: meta.border, background: activeSection === s ? meta.border : "white", color: activeSection === s ? "#fff" : meta.border }}
-                      className="px-3 py-1 rounded-md text-xs font-bold border-2 transition-colors"
+                      onClick={() => setCropEnabled((prev) => ({ ...prev, [s]: !prev[s] }))}
+                      className={`text-[10px] font-semibold px-2 py-0.5 rounded border transition-colors ${
+                        isEnabled
+                          ? "border-emerald-400 text-emerald-700 bg-emerald-50 hover:bg-emerald-100"
+                          : "border-[#CBD5E0] text-[#A0AEC0] bg-[#F7FAFC] hover:bg-[#EDF2F7]"
+                      }`}
                     >
-                      {s}
+                      {isEnabled ? "Aktiv" : "Deaktiviert"}
                     </button>
-                    <input
-                      type="number"
-                      min={1}
-                      title={`PDF-Seite für ${s}`}
-                      className="w-11 border border-[#E2E8F0] rounded px-1 py-1 text-xs font-mono text-center bg-white text-[#2D3748]"
-                      value={cropPages[s]}
-                      onChange={(e) =>
-                        setCropPages((prev) => ({ ...prev, [s]: Math.max(1, Number(e.target.value) || 1) }))
-                      }
-                    />
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => setActiveSection(s)}
+                        style={{ borderColor: meta.border, background: activeSection === s ? meta.border : "white", color: activeSection === s ? "#fff" : meta.border }}
+                        className="px-3 py-1 rounded-md text-xs font-bold border-2 transition-colors"
+                      >
+                        {s}
+                      </button>
+                      <input
+                        type="number"
+                        min={1}
+                        title={`PDF-Seite für ${s}`}
+                        className="w-11 border border-[#E2E8F0] rounded px-1 py-1 text-xs font-mono text-center bg-white text-[#2D3748]"
+                        value={cropPages[s]}
+                        onChange={(e) =>
+                          setCropPages((prev) => ({ ...prev, [s]: Math.max(1, Number(e.target.value) || 1) }))
+                        }
+                      />
+                    </div>
                   </div>
                 );
               })}
@@ -632,7 +654,8 @@ export default function KoordinatenPage() {
                   </span>
                   <input
                     type="number" min={0}
-                    className="border border-[#E2E8F0] rounded px-2 py-1.5 text-sm font-mono bg-white text-[#2D3748] w-full"
+                    disabled={!cropEnabled[activeSection]}
+                    className={`border border-[#E2E8F0] rounded px-2 py-1.5 text-sm font-mono bg-white text-[#2D3748] w-full${!cropEnabled[activeSection] ? " opacity-50 cursor-not-allowed" : ""}`}
                     value={crops[activeSection][field]}
                     onChange={(e) => setCrops((prev) => ({ ...prev, [activeSection]: { ...prev[activeSection], [field]: Number(e.target.value) } }))}
                   />
@@ -752,7 +775,7 @@ export default function KoordinatenPage() {
 
               {/* Crop editor: colored rectangles for sections on the currently displayed page */}
               {isPage2 &&
-                SECTIONS.filter((s) => cropPages[s] === previewPage).map((s) => (
+                SECTIONS.filter((s) => cropEnabled[s] && cropPages[s] === previewPage).map((s) => (
                   <CropRect
                     key={s}
                     sectionKey={s}

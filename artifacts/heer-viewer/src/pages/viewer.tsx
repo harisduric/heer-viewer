@@ -18,14 +18,28 @@ import { PdfViewer } from "../components/pdf-viewer";
 const SECTION_KEYS = ["BO", "SE", "KS", "DE"] as const;
 type SectionKey = (typeof SECTION_KEYS)[number];
 
-const STEP_NAMES: Record<number, string> = {
-  0: "Übersicht",
-  1: "BO",
-  2: "SE",
-  3: "KS",
-  4: "DE",
-  5: "Hebegurte",
-};
+type StepDef =
+  | { kind: "overview" }
+  | { kind: "section"; sKey: SectionKey }
+  | { kind: "hebegurt" };
+
+function stepTitle(def: StepDef): string {
+  if (def.kind === "overview") return "Übersicht";
+  if (def.kind === "section") return def.sKey;
+  return "Hebegurte";
+}
+
+function isSectionEnabled(
+  sKey: SectionKey,
+  coords: Record<string, unknown> | undefined,
+): boolean {
+  const entry = (
+    coords as
+      | Record<string, Record<string, { enabled?: boolean }> | undefined>
+      | undefined
+  )?.["page2_crops"]?.[sKey];
+  return entry?.enabled !== false;
+}
 
 type CropRect = { cropX: number; cropY: number; cropW: number; cropH: number };
 
@@ -38,15 +52,18 @@ export default function ViewerPage() {
   // Capture state — ref avoids stale-closure issues across sequential renders.
   const captureQueueRef = useRef<{
     phase: "main" | "hebegurt";
-    mainStep: 0 | 1 | 2 | 3 | 4;
+    mainStepDefs: StepDef[];
+    mainStepIndices: number[];
+    mainCaptureIdx: number;
+    hebegurtStepIdx: number;
     hebegurtIdx: number;
     hebegurtPageNums: number[];
-    images: string[];
+    images: { src: string; def: StepDef }[];
     originalStep: number;
   } | null>(null);
   const [isCapturing, setIsCapturing] = useState(false);
   const [hebegurtCaptureTick, setHebegurtCaptureTick] = useState(0);
-  const [printImages, setPrintImages] = useState<string[] | null>(null);
+  const [printImages, setPrintImages] = useState<Array<{ src: string; def: StepDef }> | null>(null);
   // Actual canvas heights (px) reported by PdfViewer after rendering each Hebegurt page.
   // Keyed by page number. Reset when schema changes so stale heights don't persist.
   const [hebPageHeights, setHebPageHeights] = useState<Record<number, number>>({});
@@ -72,17 +89,16 @@ export default function ViewerPage() {
   const handlePrintRendered = useCallback((dataUrl: string) => {
     const q = captureQueueRef.current;
     if (!q) return;
-    q.images.push(dataUrl);
 
     if (q.phase === "main") {
-      if (q.mainStep < 4) {
-        q.mainStep = (q.mainStep + 1) as 1 | 2 | 3 | 4;
-        setStep(q.mainStep);
+      q.images.push({ src: dataUrl, def: q.mainStepDefs[q.mainCaptureIdx] });
+      if (q.mainCaptureIdx < q.mainStepDefs.length - 1) {
+        q.mainCaptureIdx++;
+        setStep(q.mainStepIndices[q.mainCaptureIdx]);
       } else if (q.hebegurtPageNums.length > 0) {
-        // Transition to Hebegurt capture phase
         q.phase = "hebegurt";
         q.hebegurtIdx = 0;
-        setStep(5);
+        setStep(q.hebegurtStepIdx);
       } else {
         captureQueueRef.current = null;
         setIsCapturing(false);
@@ -91,9 +107,9 @@ export default function ViewerPage() {
       }
     } else {
       // Hebegurt phase — advance to next page or finish
+      q.images.push({ src: dataUrl, def: { kind: "hebegurt" } });
       q.hebegurtIdx++;
       if (q.hebegurtIdx < q.hebegurtPageNums.length) {
-        // Trigger re-render so PdfViewer gets the next page URL
         setHebegurtCaptureTick((t) => t + 1);
       } else {
         captureQueueRef.current = null;
@@ -141,7 +157,6 @@ export default function ViewerPage() {
   // Hebegurt step appears when execution has active ANO_CODEs AND schema has a start page
   const hasHebegurt = activeAnoCodes.length > 0 && !!hebegurtStartPage;
 
-  const totalSteps = hasHebegurt ? 6 : 5;
 
   // Fetch total page count so we know which pages to show in the Hebegurt step
   const { data: pageCountData } = useGetSchemaPageCount(schemaName ?? "", {
@@ -196,16 +211,28 @@ export default function ViewerPage() {
   // exactly the requested page, so PdfViewer always renders pageNumber={1}.
   // For BO/SE/KS/DE steps, read the per-section page stored in page2_crops[sKey].page
   // (defaults to 2 for backward compat with schemas that don't have this field yet).
+  const stepDefs = useMemo<StepDef[]>(() => {
+    const defs: StepDef[] = [{ kind: "overview" }];
+    for (const sKey of SECTION_KEYS) {
+      if (isSectionEnabled(sKey, coords)) {
+        defs.push({ kind: "section", sKey });
+      }
+    }
+    if (hasHebegurt) defs.push({ kind: "hebegurt" });
+    return defs;
+  }, [coords, hasHebegurt]);
+
   const sectionPage = useMemo<number>(() => {
-    if (step < 1 || step > 4 || !coords) return 2;
-    const sKey = SECTION_KEYS[step - 1];
+    const def = stepDefs[step];
+    if (!def || def.kind !== "section" || !coords) return 2;
     const cropEntry = (
       coords as Record<string, Record<string, { page?: number }>> | undefined
-    )?.["page2_crops"]?.[sKey];
+    )?.["page2_crops"]?.[def.sKey];
     return cropEntry?.page ?? 2;
-  }, [step, coords]);
+  }, [step, stepDefs, coords]);
 
-  const pdfPageNum = step === 0 ? 1 : step >= 1 && step <= 4 ? sectionPage : 1;
+  const currentDef = stepDefs[step] ?? ({ kind: "overview" } as StepDef);
+  const pdfPageNum = currentDef.kind === "section" ? sectionPage : 1;
   const pdfUrl = getGetSchemaPageUrl(schemaName, pdfPageNum);
 
   // URL for the current Hebegurt page during capture (changes with hebegurtCaptureTick).
@@ -228,16 +255,17 @@ export default function ViewerPage() {
   type LabelCoord = { x: number; y: number; rotation?: number; textWidth?: number };
 
   const crop = useMemo<CropRect | null>(() => {
-    if (step < 1 || step > 4 || !coords) return null;
-    const sKey = SECTION_KEYS[step - 1];
+    const def = stepDefs[step];
+    if (!def || def.kind !== "section" || !coords) return null;
     const cropMap =
       (coords as Record<string, Record<string, CropRect>> | undefined)?.["page2_crops"] ?? {};
-    return cropMap[sKey] ?? null;
-  }, [step, coords]);
+    return cropMap[def.sKey] ?? null;
+  }, [step, stepDefs, coords]);
 
   const overlays = useMemo(() => {
-    if (step < 1 || step > 4 || !coords || !parsedExecution) return [];
-    const sKey = SECTION_KEYS[step - 1];
+    const def = stepDefs[step];
+    if (!def || def.kind !== "section" || !coords || !parsedExecution) return [];
+    const sKey = def.sKey;
     const p2Sections =
       (coords as Record<string, Record<string, Record<string, LabelCoord>>> | undefined)?.[
         "page2"
@@ -272,13 +300,13 @@ export default function ViewerPage() {
       }));
     });
     return highlightedLabel ? all.filter((o) => o.label === highlightedLabel) : all;
-  }, [step, coords, parsedExecution, highlightedLabel]);
+  }, [step, stepDefs, coords, parsedExecution, highlightedLabel]);
 
   const currentDims: Record<string, string> =
-    step === 0
+    currentDef.kind === "overview"
       ? ((parsedExecution.globalDimensions as Record<string, string>) ?? {})
-      : step >= 1 && step <= 4
-      ? ((parsedExecution.sections?.[SECTION_KEYS[step - 1] as SectionKey] as Record<string, string>) ?? {})
+      : currentDef.kind === "section"
+      ? ((parsedExecution.sections?.[currentDef.sKey] as Record<string, string>) ?? {})
       : {};
 
   // Width (px) each Hebegurt page canvas should fill.
@@ -293,7 +321,7 @@ export default function ViewerPage() {
       <div className="flex flex-col h-[calc(100vh-56px-32px)] overflow-hidden">
         {/* Stepper */}
         <div className="flex items-center gap-1 px-4 py-3 bg-white border-b border-[#E2E8F0] overflow-x-auto shrink-0">
-          {Array.from({ length: totalSteps }, (_, i) => {
+          {stepDefs.map((def, i) => {
             const isActive = i === step;
             const isDone = i < step;
             return (
@@ -310,7 +338,7 @@ export default function ViewerPage() {
                   }`}
               >
                 {isDone && <span>✓</span>}
-                <span>{STEP_NAMES[i]}</span>
+                <span>{stepTitle(def)}</span>
               </button>
             );
           })}
@@ -319,9 +347,18 @@ export default function ViewerPage() {
               variant="outline"
               size="sm"
               onClick={() => {
+                const mainDefs = stepDefs.filter((d) => d.kind !== "hebegurt");
+                const mainIndices = stepDefs
+                  .map((d, i) => ({ d, i }))
+                  .filter(({ d }) => d.kind !== "hebegurt")
+                  .map(({ i }) => i);
+                const hebIdx = stepDefs.findIndex((d) => d.kind === "hebegurt");
                 captureQueueRef.current = {
                   phase: "main",
-                  mainStep: 0,
+                  mainStepDefs: mainDefs,
+                  mainStepIndices: mainIndices,
+                  mainCaptureIdx: 0,
+                  hebegurtStepIdx: hebIdx,
                   hebegurtIdx: 0,
                   hebegurtPageNums: hasHebegurt ? [...hebegurtPageNums] : [],
                   images: [],
@@ -346,7 +383,7 @@ export default function ViewerPage() {
         <div className="flex flex-1 overflow-hidden">
           {/* PDF Viewer area */}
           <div ref={pdfAreaRef} className="flex-1 overflow-hidden">
-            {step === 5 ? (
+            {currentDef.kind === "hebegurt" ? (
               isCapturing && captureHebegurtUrl ? (
                 // Capture mode: sequential single-page PdfViewer (one per Hebegurt page)
                 <PdfViewer
@@ -413,12 +450,12 @@ export default function ViewerPage() {
             <aside className="w-64 bg-white border-l border-[#E2E8F0] overflow-y-auto shrink-0">
               <div className="p-3 border-b border-[#E2E8F0]">
                 <p className="text-xs font-semibold uppercase tracking-wider text-[#718096]">
-                  {STEP_NAMES[step]}
+                  {stepTitle(currentDef)}
                 </p>
-                {step >= 1 && step <= 4 && (
+                {currentDef.kind === "section" && (
                   <p className="text-[10px] text-[#A0AEC0] mt-0.5">Klicken zum Hervorheben</p>
                 )}
-                {step === 5 && activeAnoCodes.length > 0 && (
+                {currentDef.kind === "hebegurt" && activeAnoCodes.length > 0 && (
                   <p className="text-[10px] text-[#A0AEC0] mt-0.5">
                     {activeAnoCodes.length} aktive(r) ANO_CODE
                   </p>
@@ -432,7 +469,7 @@ export default function ViewerPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {step === 5 ? (
+                  {currentDef.kind === "hebegurt" ? (
                     activeAnoCodes.length > 0 ? (
                       activeAnoCodes.map((ac, idx) => (
                         <tr key={`${idx}-${ac.section}-${ac.value}`} className="border-t border-[#E2E8F0]">
@@ -482,9 +519,9 @@ export default function ViewerPage() {
             <ChevronLeft className="w-4 h-4 mr-1" /> Zurück
           </Button>
           <span className="text-sm font-medium text-[#718096]">
-            Schritt {step + 1} / {totalSteps} — {STEP_NAMES[step]}
+            Schritt {step + 1} / {stepDefs.length} — {stepTitle(currentDef)}
           </span>
-          <Button size="sm" disabled={step === totalSteps - 1 || isCapturing} onClick={() => setStep((s) => s + 1)}>
+          <Button size="sm" disabled={step === stepDefs.length - 1 || isCapturing} onClick={() => setStep((s) => s + 1)}>
             Weiter <ChevronRight className="w-4 h-4 ml-1" />
           </Button>
         </div>
@@ -579,14 +616,13 @@ export default function ViewerPage() {
               }
             `}</style>
             <div id="heer-print-view">
-              {printImages.map((src, idx) => {
+              {printImages.map(({ src, def }, idx) => {
                 const isLastPage = idx === printImages.length - 1;
-                if (idx < 5) {
-                  // idx 0 = Übersicht (no legend), idx 1–4 = BO/SE/KS/DE (with legend)
-                  const pageTitle = idx === 0 ? "Übersicht" : SECTION_KEYS[idx - 1];
-                  const sectionKey = idx > 0 ? SECTION_KEYS[idx - 1] : null;
+                if (def.kind !== "hebegurt") {
+                  const pageTitle = stepTitle(def);
+                  const sectionKey = def.kind === "section" ? def.sKey : null;
                   const dims: Record<string, string> = sectionKey
-                    ? ((parsedExecution.sections?.[sectionKey as SectionKey] as Record<string, string>) ?? {})
+                    ? ((parsedExecution.sections?.[sectionKey] as Record<string, string>) ?? {})
                     : {};
                   return (
                     <div
@@ -623,8 +659,8 @@ export default function ViewerPage() {
                     </div>
                   );
                 }
-                // idx >= 5: Hebegurt pages
-                const isFirstHebegurt = idx === 5;
+                // Hebegurt pages
+                const isFirstHebegurt = idx > 0 && printImages[idx - 1]?.def.kind !== "hebegurt";
                 return (
                   <div
                     key={idx}

@@ -1,0 +1,77 @@
+Please check FIXES.md before making any changes.
+
+GOAL: Allow each section (BO/SE/KS/DE) to be individually enabled or 
+disabled per schema, since some schema drawings only have a subset of 
+sections (e.g. only a "Boden" with no SE/KS/DE), and this can change 
+over time if the schema drawing or product changes.
+
+TASK:
+
+1. Data model: extend each section's crop entry in the coordinates 
+   JSON (page2_crops.BO/.SE/.KS/.DE) with a boolean field "enabled" 
+   (default true, for backward compatibility with all existing 
+   schemas - nothing currently configured should disappear).
+
+2. Koordinaten editor UI: add a toggle button directly above each 
+   section's color tab + page-number input (so above "BO" + its page 
+   field, above "SE" + its page field, etc.). Default state: "Aktiv". 
+   Clicking it switches to "Deaktiviert" (and back to "Aktiv" on 
+   another click).
+   
+   IMPORTANT: the BO/SE/KS/DE section tabs themselves must ALWAYS 
+   remain visible and clickable in the Koordinaten editor, REGARDLESS 
+   of enabled/disabled state - the admin must always be able to open 
+   any section (even a currently-disabled one) to re-enable it later, 
+   adjust its crop, or change its page number. Disabling a section only 
+   affects: (a) whether its colored crop rectangle is shown/drawn on 
+   the canvas preview, and (b) downstream behavior in the viewer/print 
+   (see below). It must NEVER remove or hide the section's tab/controls 
+   from the Koordinaten editor itself.
+   
+   When a section is set to "Deaktiviert":
+   - Its colored crop rectangle is hidden from the canvas preview
+   - Its rectangle is excluded from any "matches current page" 
+     filtering logic (so it doesn't visually interfere when navigating 
+     pages for other sections)
+   - The X/Y/Breite/Höhe inputs for that section can remain visible but 
+     disabled/grayed out, or simply hidden - whichever is simpler to 
+     implement cleanly. The admin can still toggle it back to "Aktiv" 
+     at any time to restore editing.
+   Save this "enabled" state together with the rest of the coordinates 
+   on Speichern, exactly like the existing page-number fields.
+
+3. Viewer (viewer.tsx): reuse the same conditional-step pattern already 
+   used for the Hebegurt step (hasHebegurt). For each of BO/SE/KS/DE, 
+   only show that step in the navigation if its "enabled" field is 
+   true (default true if missing, for backward compatibility). A 
+   disabled section's tab/step should not appear at all in the step 
+   navigation, and the user simply skips over it when navigating 
+   between steps. This ONLY applies to the production Viewer page - 
+   the Koordinaten editor is unaffected (per point 2 above).
+
+4. Print feature: skip generating a printed page entirely for any 
+   section whose "enabled" is false - no blank/empty page should appear 
+   in the print output for disabled sections.
+
+5. Keep this fully generic and backward compatible - schemas without 
+   an explicit "enabled" field per section must behave exactly as 
+   before (all sections shown/printed).
+
+VERIFICATION:
+- pnpm --filter @workspace/heer-viewer run typecheck must stay clean
+- pnpm --filter @workspace/api-server run typecheck must stay clean
+- Test 1 (no regression): PLK_W-BO_G-MV_AL - confirm all 4 sections 
+  still show in the viewer (5 steps total with Übersicht) and print 
+  (5 pages), exactly as before, since none are explicitly disabled.
+- Test 2: In the Koordinaten editor, disable SE and KS for any test 
+  schema, save, then confirm: 
+  - The SE/KS tabs are STILL visible and clickable in the Koordinaten 
+    editor (only their crop rectangles are hidden from the canvas)
+  - Their crop rectangles disappear from the editor canvas
+  - The viewer step navigation no longer shows SE/KS tabs (only 
+    Übersicht/BO/DE remain, plus Hebegurte if applicable)
+  - Clicking Drucken produces a print output WITHOUT blank pages for 
+    SE/KS - just Übersicht, BO, DE (and Hebegurte if applicable)
+  - Re-enabling SE/KS (toggle back to "Aktiv" in the still-visible SE/KS 
+    tabs, save) restores them in both viewer and print
+- Do NOT mark as done before a visual check of both scenarios.
