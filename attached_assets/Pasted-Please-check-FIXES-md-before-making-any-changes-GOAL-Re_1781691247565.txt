@@ -1,0 +1,55 @@
+Please check FIXES.md before making any changes.
+
+GOAL: Rename ONLY the user-visible display text "Hebegurte" to "Infos" 
+- nothing else. This is a pure text/label change.
+
+CRITICAL CONSTRAINT - READ CAREFULLY:
+Die Logik muss zwingend identisch bleiben. This task is STRICTLY a 
+find-and-replace of the visible word "Hebegurte" with "Infos" in 
+user-facing text. The application's logic, behavior, conditions, and 
+functionality must remain 100% identical before and after this change 
+- no exceptions. No refactoring, no "improvements", no logic changes, 
+no styling changes, no behavior changes of any kind. If you find 
+yourself wanting to change anything beyond a displayed text string, 
+stop and don't.
+
+TASK:
+Find every user-visible occurrence of the text "Hebegurte" in the 
+viewer UI and print output, and change ONLY that displayed text to 
+"Infos":
+- The step/tab label in the viewer's step navigation
+- The step counter label if it shows the step name (e.g. "Schritt X / 
+  Y — Hebegurte" becomes "Schritt X / Y — Infos")
+- The sidebar heading for this step
+- The printed page title for this section in the print output
+
+DO NOT touch, rename, or modify ANY of the following:
+- Variable names, function names, state names, type names, or any 
+  code identifiers (hasHebegurt, hebegurtStartPage, HEBEGURT_*, etc.) - 
+  leave every single one exactly as it is
+- The "Hebegurt-Startseite" label in the Koordinaten editor - this is 
+  the admin-facing config setting and stays unchanged
+- Any logic, conditions, data flow, rendering behavior, layout, 
+  styling, spacing, or component structure
+- The condition that determines WHEN this step appears (hasHebegurt 
+  logic) - must trigger under exactly the same circumstances as before
+- Anything not explicitly the literal word "Hebegurte" shown to the 
+  production-floor user
+
+The end result should be a diff containing ONLY changed string 
+literals where the text "Hebegurte" was displayed - nothing else 
+should appear in the diff. Logic must be byte-for-byte behaviorally 
+identical.
+
+VERIFICATION:
+- pnpm --filter @workspace/heer-viewer run typecheck must stay clean
+- Test with LAV_W-BO_G-MV_AL_-_0.pdf: confirm the viewer step tab now 
+  reads "Infos" instead of "Hebegurte", printed page title also shows 
+  "Infos", and the step still triggers under exactly the same ANO_CODE 
+  conditions as before
+- Re-confirm PLK_W-BO_G-MV_AL (no ANO_CODE) still correctly shows no 
+  extra step - same trigger condition, unchanged
+- Confirm via git diff (or equivalent) that the change set is minimal 
+  - only display-text string literals changed, nothing structural or 
+  logical
+- Do NOT mark as done before a visual check.

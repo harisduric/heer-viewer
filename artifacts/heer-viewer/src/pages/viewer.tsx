@@ -26,7 +26,7 @@ type StepDef =
 function stepTitle(def: StepDef): string {
   if (def.kind === "overview") return "Übersicht";
   if (def.kind === "section") return def.sKey;
-  return "Hebegurte";
+  return "Infos";
 }
 
 function isSectionEnabled(
@@ -668,11 +668,11 @@ export default function ViewerPage() {
                     style={{ breakAfter: isLastPage ? "auto" : "page" }}
                   >
                     <p className="heer-pv-title">
-                      {isFirstHebegurt ? "Hebegurte" : "Hebegurte (Forts.)"}
+                      {isFirstHebegurt ? "Infos" : "Infos (Forts.)"}
                     </p>
                     <div className="heer-pv-body">
                       <div className="heer-pv-img-area">
-                        <img src={src} alt="Hebegurte" />
+                        <img src={src} alt="Infos" />
                       </div>
                       {isFirstHebegurt && activeAnoCodes.length > 0 && (
                         <div className="heer-pv-legend">
