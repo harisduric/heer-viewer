@@ -1,23 +1,67 @@
-import { Switch, Route, Router as WouterRouter } from "wouter";
+import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Loader2 } from "lucide-react";
 import NotFound from "@/pages/not-found";
 import ImportPage from "@/pages/import";
 import ViewerPage from "@/pages/viewer";
 import BibliothekPage from "@/pages/bibliothek";
 import KoordinatenPage from "@/pages/koordinaten";
+import UnlockPage from "@/pages/unlock";
 
 const queryClient = new QueryClient();
+
+function AuthGuard({ children }: { children: ReactNode }) {
+  const [location, navigate] = useLocation();
+  const [status, setStatus] = useState<"loading" | "ok">("loading");
+  const locationRef = useRef(location);
+
+  useEffect(() => {
+    fetch("/api/auth/session", { credentials: "include" })
+      .then((res) => {
+        if (res.ok) {
+          setStatus("ok");
+        } else {
+          const saved = locationRef.current;
+          if (saved && saved !== "/unlock") {
+            sessionStorage.setItem("heer_redirect", saved);
+          }
+          navigate("/unlock");
+        }
+      })
+      .catch(() => {
+        navigate("/unlock");
+      });
+  }, [navigate]);
+
+  if (status === "loading") {
+    return (
+      <div className="flex items-center justify-center h-screen bg-[#F7F8F3]">
+        <Loader2 className="w-8 h-8 animate-spin text-[#B8CC5A]" />
+      </div>
+    );
+  }
+
+  return <>{children}</>;
+}
 
 function Router() {
   return (
     <Switch>
-      <Route path="/" component={ImportPage} />
-      <Route path="/viewer" component={ViewerPage} />
-      <Route path="/bibliothek" component={BibliothekPage} />
-      <Route path="/koordinaten" component={KoordinatenPage} />
-      <Route component={NotFound} />
+      <Route path="/unlock" component={UnlockPage} />
+      <Route>
+        <AuthGuard>
+          <Switch>
+            <Route path="/" component={ImportPage} />
+            <Route path="/viewer" component={ViewerPage} />
+            <Route path="/bibliothek" component={BibliothekPage} />
+            <Route path="/koordinaten" component={KoordinatenPage} />
+            <Route component={NotFound} />
+          </Switch>
+        </AuthGuard>
+      </Route>
     </Switch>
   );
 }
