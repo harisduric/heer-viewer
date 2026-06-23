@@ -1,5 +1,6 @@
 import { Router } from "express";
 import type { IRouter } from "express";
+import { pinHash } from "../lib/pinHash";
 
 const router: IRouter = Router();
 
@@ -10,7 +11,7 @@ router.get("/auth/session", (req, res) => {
     res.json({ ok: true, authDisabled: true });
     return;
   }
-  if (req.signedCookies?.heer_session === "authenticated") {
+  if (req.signedCookies?.heer_session === pinHash()) {
     res.json({ ok: true });
     return;
   }
@@ -20,7 +21,7 @@ router.get("/auth/session", (req, res) => {
 /** POST /api/auth/unlock — validate PIN, set 30-day signed session cookie. */
 router.post("/auth/unlock", (req, res) => {
   if (!process.env.ACCESS_PIN) {
-    res.cookie("heer_session", "authenticated", cookieOpts());
+    res.cookie("heer_session", pinHash(), cookieOpts());
     res.json({ ok: true });
     return;
   }
@@ -31,7 +32,7 @@ router.post("/auth/unlock", (req, res) => {
     return;
   }
 
-  res.cookie("heer_session", "authenticated", cookieOpts());
+  res.cookie("heer_session", pinHash(), cookieOpts());
   res.json({ ok: true });
 });
 
