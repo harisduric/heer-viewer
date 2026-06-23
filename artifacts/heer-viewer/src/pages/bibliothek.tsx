@@ -396,18 +396,29 @@ export default function BibliothekPage() {
 
   const [bulkRunning, setBulkRunning] = useState(false);
   const [bulkProgress, setBulkProgress] = useState<BulkProgress>(null);
+  const cancelRequestedRef = useRef(false);
+
+  const handleCancelBulk = useCallback(() => {
+    cancelRequestedRef.current = true;
+  }, []);
 
   const handleRedetectAll = useCallback(async () => {
     const loaded = library.filter((s) => s.status === "loaded");
     if (loaded.length === 0) return;
 
+    cancelRequestedRef.current = false;
     setBulkRunning(true);
     setBulkProgress({ done: 0, total: loaded.length, failed: 0 });
 
     let succeeded = 0;
     let failed = 0;
+    let cancelled = false;
 
     for (const slot of loaded) {
+      if (cancelRequestedRef.current) {
+        cancelled = true;
+        break;
+      }
       try {
         await redetectMutation.mutateAsync({ name: slot.name });
         succeeded++;
@@ -422,13 +433,21 @@ export default function BibliothekPage() {
 
     await queryClient.invalidateQueries({ queryKey: getGetSchemaLibraryQueryKey() });
 
-    toast({
-      title: failed === 0 ? "Label-Erkennung abgeschlossen" : "Label-Erkennung mit Fehlern abgeschlossen",
-      description: failed === 0
-        ? `${succeeded} Schema${succeeded !== 1 ? "ta" : ""} erfolgreich verarbeitet.`
-        : `${succeeded} erfolgreich, ${failed} fehlgeschlagen.`,
-      variant: failed === 0 ? "default" : "destructive",
-    });
+    if (cancelled) {
+      toast({
+        title: "Label-Erkennung abgebrochen",
+        description: `${succeeded + failed} von ${loaded.length} abgeschlossen, abgebrochen${failed > 0 ? ` (${failed} Fehler)` : ""}.`,
+        variant: "destructive",
+      });
+    } else {
+      toast({
+        title: failed === 0 ? "Label-Erkennung abgeschlossen" : "Label-Erkennung mit Fehlern abgeschlossen",
+        description: failed === 0
+          ? `${succeeded} Schema${succeeded !== 1 ? "ta" : ""} erfolgreich verarbeitet.`
+          : `${succeeded} erfolgreich, ${failed} fehlgeschlagen.`,
+        variant: failed === 0 ? "default" : "destructive",
+      });
+    }
   }, [library, redetectMutation, toast, queryClient]);
 
   const loadedCount = library.filter((s) => s.status === "loaded").length;
@@ -462,14 +481,24 @@ export default function BibliothekPage() {
             </button>
 
             {bulkRunning && bulkProgress && (
-              <p className="text-xs text-[#718096]">
-                {bulkProgress.done} / {bulkProgress.total} abgeschlossen
-                {bulkProgress.failed > 0 && (
-                  <span className="text-[#E53E3E] ml-1">
-                    ({bulkProgress.failed} Fehler)
-                  </span>
-                )}
-              </p>
+              <div className="flex items-center gap-2">
+                <p className="text-xs text-[#718096]">
+                  {bulkProgress.done} / {bulkProgress.total} abgeschlossen
+                  {bulkProgress.failed > 0 && (
+                    <span className="text-[#E53E3E] ml-1">
+                      ({bulkProgress.failed} Fehler)
+                    </span>
+                  )}
+                </p>
+                <button
+                  onClick={handleCancelBulk}
+                  className="flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded border border-[#FED7D7] text-[#C53030] bg-[#FFF5F5] hover:bg-[#FED7D7] transition-colors"
+                  title="Bulk-Erkennung abbrechen"
+                >
+                  <X className="w-3 h-3 shrink-0" />
+                  Abbrechen
+                </button>
+              </div>
             )}
           </div>
         </div>
