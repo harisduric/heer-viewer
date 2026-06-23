@@ -377,8 +377,11 @@ export default function ViewerPage() {
 
         {/* Main area */}
         <div className="flex flex-1 overflow-hidden">
-          {/* PDF Viewer area */}
-          <div ref={pdfAreaRef} className="flex-1 overflow-hidden">
+          {/* PDF Viewer area — scrollable for Übersicht (full page), clipped for section crops */}
+          <div
+            ref={pdfAreaRef}
+            className={`flex-1 ${currentDef.kind === "overview" ? "overflow-y-auto bg-gray-100" : "overflow-hidden"}`}
+          >
             {currentDef.kind === "hebegurt" ? (
               isCapturing && captureHebegurtUrl ? (
                 // Capture mode: sequential single-page PdfViewer (one per Hebegurt page)
@@ -421,18 +424,26 @@ export default function ViewerPage() {
                   )}
                 </div>
               )
-            ) : (
-              // Steps 0–4: single PdfViewer fitted to container
+            ) : currentDef.kind === "overview" ? (
+              // Übersicht: fill container width, scroll vertically for tall pages
               <PdfViewer
                 url={pdfUrl}
                 pageNumber={1}
-                scale={(() => {
-                  if (!crop || containerWidth <= 50 || containerHeight <= 50) return 1.5;
-                  return Math.min(
-                    containerWidth / crop.cropW,
-                    containerHeight / crop.cropH,
-                  );
-                })()}
+                fitToWidth={containerWidth > 50 ? containerWidth : undefined}
+                overlays={overlays}
+                interactive={!isCapturing}
+                onRendered={isCapturing ? handlePrintRendered : undefined}
+              />
+            ) : (
+              // Section steps (BO/SE/KS/DE): scale crop to fill both dimensions
+              <PdfViewer
+                url={pdfUrl}
+                pageNumber={1}
+                scale={
+                  crop && containerWidth > 50 && containerHeight > 50
+                    ? Math.min(containerWidth / crop.cropW, containerHeight / crop.cropH)
+                    : 1.5
+                }
                 crop={crop}
                 overlays={overlays}
                 interactive={!isCapturing}
