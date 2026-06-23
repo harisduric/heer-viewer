@@ -18,6 +18,24 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
 
 type Msg = { text: string; kind: "success" | "info" };
 
+function countLabels(coordinates: Record<string, unknown> | null | undefined): number {
+  if (!coordinates) return 0;
+  let total = 0;
+  const page1 = coordinates["page1"];
+  if (page1 && typeof page1 === "object" && !Array.isArray(page1)) {
+    total += Object.keys(page1 as Record<string, unknown>).length;
+  }
+  const page2 = coordinates["page2"];
+  if (page2 && typeof page2 === "object" && !Array.isArray(page2)) {
+    for (const section of Object.values(page2 as Record<string, unknown>)) {
+      if (section && typeof section === "object" && !Array.isArray(section)) {
+        total += Object.keys(section as Record<string, unknown>).length;
+      }
+    }
+  }
+  return total;
+}
+
 function SchemaCard({ slot }: { slot: SchemaSlot }) {
   const queryClient = useQueryClient();
   const [uploading, setUploading] = useState(false);
@@ -44,10 +62,11 @@ function SchemaCard({ slot }: { slot: SchemaSlot }) {
           kind: "info",
         },
       ]);
+      queryClient.invalidateQueries({ queryKey: getGetSchemaLibraryQueryKey() });
     } catch (_err) {
       setMessages([{ text: "Fehler beim Erkennen der Labels", kind: "success" }]);
     }
-  }, [slot.name, redetectMutation]);
+  }, [slot.name, redetectMutation, queryClient]);
 
   useEffect(() => {
     if (slot.status !== "loaded" || !slot.object_path) return;
@@ -169,6 +188,10 @@ function SchemaCard({ slot }: { slot: SchemaSlot }) {
 
   const uploadDate = slot.uploaded_at
     ? new Date(slot.uploaded_at).toLocaleDateString("de-CH")
+    : null;
+
+  const labelCount = slot.status === "loaded"
+    ? countLabels(slot.coordinates as Record<string, unknown> | null)
     : null;
 
   return (
@@ -322,16 +345,29 @@ function SchemaCard({ slot }: { slot: SchemaSlot }) {
 
       {/* Badge + messages */}
       <div className="mt-auto flex flex-col gap-2">
-        <span
-          className={`inline-block text-[11px] font-medium px-2 py-0.5 rounded w-fit
-            ${
-              slot.status === "loaded"
-                ? "bg-[#C6F6D5] text-[#276749]"
-                : "bg-[#FEFCBF] text-[#975A16]"
-            }`}
-        >
-          {slot.status === "loaded" ? "Geladen" : "Fehlend"}
-        </span>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span
+            className={`inline-block text-[11px] font-medium px-2 py-0.5 rounded
+              ${
+                slot.status === "loaded"
+                  ? "bg-[#C6F6D5] text-[#276749]"
+                  : "bg-[#FEFCBF] text-[#975A16]"
+              }`}
+          >
+            {slot.status === "loaded" ? "Geladen" : "Fehlend"}
+          </span>
+          {labelCount !== null && (
+            labelCount === 0 ? (
+              <span className="inline-block text-[11px] font-medium px-2 py-0.5 rounded bg-[#FFF5F5] text-[#C53030] border border-[#FED7D7]">
+                0 Labels
+              </span>
+            ) : (
+              <span className="inline-block text-[11px] font-medium px-2 py-0.5 rounded bg-[#EBF8FF] text-[#2B6CB0]">
+                {labelCount} Label{labelCount !== 1 ? "s" : ""}
+              </span>
+            )
+          )}
+        </div>
 
         {messages.map((m, i) => (
           <div
@@ -353,6 +389,7 @@ function SchemaCard({ slot }: { slot: SchemaSlot }) {
 type BulkProgress = { done: number; total: number; failed: number } | null;
 
 export default function BibliothekPage() {
+  const queryClient = useQueryClient();
   const { data: library = [], isLoading } = useGetSchemaLibrary();
   const redetectMutation = useRedetectSchemaLabels();
   const { toast } = useToast();
@@ -383,6 +420,8 @@ export default function BibliothekPage() {
     setBulkRunning(false);
     setBulkProgress(null);
 
+    await queryClient.invalidateQueries({ queryKey: getGetSchemaLibraryQueryKey() });
+
     toast({
       title: failed === 0 ? "Label-Erkennung abgeschlossen" : "Label-Erkennung mit Fehlern abgeschlossen",
       description: failed === 0
@@ -390,7 +429,7 @@ export default function BibliothekPage() {
         : `${succeeded} erfolgreich, ${failed} fehlgeschlagen.`,
       variant: failed === 0 ? "default" : "destructive",
     });
-  }, [library, redetectMutation, toast]);
+  }, [library, redetectMutation, toast, queryClient]);
 
   const loadedCount = library.filter((s) => s.status === "loaded").length;
 
