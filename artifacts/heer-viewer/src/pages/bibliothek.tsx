@@ -36,7 +36,7 @@ function countLabels(coordinates: Record<string, unknown> | null | undefined): n
   return total;
 }
 
-function SchemaCard({ slot }: { slot: SchemaSlot }) {
+function SchemaCard({ slot, hasFailed }: { slot: SchemaSlot; hasFailed?: boolean }) {
   const queryClient = useQueryClient();
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
@@ -201,6 +201,8 @@ function SchemaCard({ slot }: { slot: SchemaSlot }) {
         ${
           dragOver
             ? "border-[#B8CC5A] shadow-[0_4px_16px_rgba(184,204,90,0.3)]"
+            : hasFailed
+            ? "border-[#FC8181] shadow-[0_4px_16px_rgba(252,129,129,0.25)] bg-[#FFFAFA]"
             : "border-[#E2E8F0] hover:border-[#B8CC5A] hover:shadow-[0_4px_16px_rgba(184,204,90,0.2)]"
         }`}
       onDragOver={(e) => {
@@ -396,6 +398,7 @@ export default function BibliothekPage() {
 
   const [bulkRunning, setBulkRunning] = useState(false);
   const [bulkProgress, setBulkProgress] = useState<BulkProgress>(null);
+  const [failedSchemaNames, setFailedSchemaNames] = useState<string[]>([]);
   const cancelRequestedRef = useRef(false);
 
   const handleCancelBulk = useCallback(() => {
@@ -409,9 +412,10 @@ export default function BibliothekPage() {
     cancelRequestedRef.current = false;
     setBulkRunning(true);
     setBulkProgress({ done: 0, total: loaded.length, failed: 0 });
+    setFailedSchemaNames([]);
 
     let succeeded = 0;
-    let failed = 0;
+    const failedNames: string[] = [];
     let cancelled = false;
 
     for (const slot of loaded) {
@@ -423,29 +427,30 @@ export default function BibliothekPage() {
         await redetectMutation.mutateAsync({ name: slot.name });
         succeeded++;
       } catch {
-        failed++;
+        failedNames.push(slot.name);
       }
-      setBulkProgress({ done: succeeded + failed, total: loaded.length, failed });
+      setBulkProgress({ done: succeeded + failedNames.length, total: loaded.length, failed: failedNames.length });
     }
 
     setBulkRunning(false);
     setBulkProgress(null);
+    setFailedSchemaNames(failedNames);
 
     await queryClient.invalidateQueries({ queryKey: getGetSchemaLibraryQueryKey() });
 
     if (cancelled) {
       toast({
         title: "Label-Erkennung abgebrochen",
-        description: `${succeeded + failed} von ${loaded.length} abgeschlossen, abgebrochen${failed > 0 ? ` (${failed} Fehler)` : ""}.`,
+        description: `${succeeded + failedNames.length} von ${loaded.length} abgeschlossen, abgebrochen${failedNames.length > 0 ? ` (${failedNames.length} Fehler)` : ""}.`,
         variant: "destructive",
       });
     } else {
       toast({
-        title: failed === 0 ? "Label-Erkennung abgeschlossen" : "Label-Erkennung mit Fehlern abgeschlossen",
-        description: failed === 0
+        title: failedNames.length === 0 ? "Label-Erkennung abgeschlossen" : "Label-Erkennung mit Fehlern abgeschlossen",
+        description: failedNames.length === 0
           ? `${succeeded} Schema${succeeded !== 1 ? "ta" : ""} erfolgreich verarbeitet.`
-          : `${succeeded} erfolgreich, ${failed} fehlgeschlagen.`,
-        variant: failed === 0 ? "default" : "destructive",
+          : `${succeeded} erfolgreich, ${failedNames.length} fehlgeschlagen.`,
+        variant: failedNames.length === 0 ? "default" : "destructive",
       });
     }
   }, [library, redetectMutation, toast, queryClient]);
@@ -503,6 +508,28 @@ export default function BibliothekPage() {
           </div>
         </div>
 
+        {failedSchemaNames.length > 0 && (
+          <div className="mb-4 flex items-start gap-3 rounded-lg border border-[#FEB2B2] bg-[#FFF5F5] px-4 py-3">
+            <button
+              onClick={() => setFailedSchemaNames([])}
+              aria-label="Schließen"
+              className="mt-0.5 shrink-0 text-[#C53030] hover:text-[#9B2C2C] transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-[#C53030]">
+                {failedSchemaNames.length === 1
+                  ? "1 Schema fehlgeschlagen"
+                  : `${failedSchemaNames.length} Schemata fehlgeschlagen`}
+              </p>
+              <p className="text-xs text-[#E53E3E] mt-0.5 break-words">
+                {failedSchemaNames.join(", ")}
+              </p>
+            </div>
+          </div>
+        )}
+
         {isLoading ? (
           <div className="flex items-center justify-center py-20">
             <Loader2 className="w-8 h-8 animate-spin text-[#B8CC5A]" />
@@ -510,7 +537,11 @@ export default function BibliothekPage() {
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
             {library.map((slot) => (
-              <SchemaCard key={slot.name} slot={slot} />
+              <SchemaCard
+                key={slot.name}
+                slot={slot}
+                hasFailed={failedSchemaNames.includes(slot.name)}
+              />
             ))}
           </div>
         )}
