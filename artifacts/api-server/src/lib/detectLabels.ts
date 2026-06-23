@@ -187,11 +187,14 @@ export async function detectLabelsFromPdf(
       pagerender: async (page) => {
         if (!pagesToScan.has(page.pageNumber)) return "";
 
-        const vp = page.getViewport({ scale: 1.0 });
-        // vp.height is undefined in some pdf-parse pdfjs builds — guard it.
-        // If it IS defined, it gives the actual page height which would shift the
-        // coordinate system. Only use it when valid.
-        const ph = Number.isFinite(vp.height) ? vp.height : DETECT_PAGE_H;
+        // DETECT_PAGE_H=842 must always be used here so that detection coordinates
+        // are consistent with the viewer's yAdjust correction and the crop-containment
+        // test in assignSection. Using vp.height (e.g. 595 for A4 landscape) shifts
+        // every y-value by ~247 pts, causing labels near the page top to fail crop
+        // containment and fall to wrong Voronoi assignments. Intentionally ignoring
+        // vp.height — see FIXES.md §5.
+        void page.getViewport({ scale: 1.0 }); // keep call so pdfjs caches layout
+        const ph = DETECT_PAGE_H;
 
         const content = await page.getTextContent();
         for (const item of content.items) {

@@ -77,7 +77,32 @@ configured on the same page as each text item.
 
 ---
 
-## 5. Overlay Rendering — CONFIRMED WORKING
+## 5. Detection Page Height — ALWAYS USE DETECT_PAGE_H=842
+
+**Never use `vp.height` from pdf-parse inside `detectLabels.ts`.**
+
+In the `pagerender` hook, always set `const ph = DETECT_PAGE_H` (842), even when `vp.height` is defined and finite.
+
+**Why:** The crop-containment test in `assignSection` shifts crop boundaries by
+`yOffset = DETECT_PAGE_H − actualPageH` so that both coordinate systems match.
+If detection uses `vp.height` (e.g. 595 for A4 landscape) instead of 842, every
+stored y value shifts by ~247 pts relative to what the containment test expects.
+Labels near the top of the page then fall outside all crop rectangles and are
+assigned by Voronoi to the wrong section, producing values at random positions.
+
+The viewer's `yAdjust = naturalPageH − 842` correction already compensates for
+the real page height at render time — this only works when detection stored
+coordinates using `ph = 842`.
+
+**Fix committed:** `void page.getViewport(…)` is kept (pdfjs layout cache), then
+`const ph = DETECT_PAGE_H;` — no conditional on `vp.height`.
+
+After changing this line, ALL schema PDFs must be re-detected via
+`POST /api/schema/:name/redetect` (or the redetect-all script in `scripts/src/`).
+
+---
+
+## 6. Overlay Rendering — CONFIRMED WORKING
 
 **Final approach: value placed NEXT TO its Lx anchor. Do not cover or replace the Lx label.**
 

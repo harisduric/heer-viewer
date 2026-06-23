@@ -7,3 +7,4 @@
 - [Per-section page model](per-section-page-model.md) — each BO/SE/KS/DE crop can be on its own PDF page; stored as page2_crops[sec].page (default 2).
 - [pdfjs buffer transfer](pdfjs-buffer-transfer.md) — getDocument({data: uint8Array}) neuters the buffer via worker postMessage; always pass .slice() to preserve React state.
 - [Render IIFE cancelled checks](render-iife-cancelled.md) — canvas.width resets the canvas; check cancelled before it or stale IIFEs overwrite correct renders.
+- [Detection ph must always be 842](detect-ph-fix.md) — Never use vp.height in detectLabels pagerender hook; always ph=DETECT_PAGE_H. After any detectLabels change, redetect all schemas via /redetect.
