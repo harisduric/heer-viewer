@@ -224,7 +224,34 @@ export function PdfViewer({
         // (e.g. a dense cluster), candidate 1 is drawn anyway — a value MUST
         // always be visible; it must never be silently omitted.
 
-        const drawnBoxes: { x: number; y: number; w: number; h: number }[] = [];
+        // Pre-register each label glyph's bounding box so value candidates
+        // won't overlap the Lx text that's already printed in the PDF.
+        const drawnBoxes: { x: number; y: number; w: number; h: number }[] =
+          items.map(({ overlay, rawCx, rawCy }, i) => {
+            const FONT = fontSizes[i];
+            const HALF_H = Math.ceil(FONT / 2) + PAD;
+            const labelWidthPx =
+              overlay.textWidth != null ? overlay.textWidth * renderZoom : LABEL_W_FALLBACK;
+            const isRotated = !!overlay.rotation;
+            if (isRotated) {
+              // Rotated 90°: label is a vertical stroke.
+              // rawCx ≈ horizontal centre, rawCy ≈ bottom of the glyph.
+              return {
+                x: rawCx - HALF_H,
+                y: rawCy - labelWidthPx,
+                w: FONT + PAD * 2,
+                h: labelWidthPx + PAD,
+              };
+            } else {
+              // Normal: label extends rightward from rawCx, centred at rawCy.
+              return {
+                x: rawCx - PAD,
+                y: rawCy - HALF_H,
+                w: labelWidthPx + PAD * 2,
+                h: FONT + PAD * 2,
+              };
+            }
+          });
 
         function hasCollision(box: { x: number; y: number; w: number; h: number }): boolean {
           for (const b of drawnBoxes) {

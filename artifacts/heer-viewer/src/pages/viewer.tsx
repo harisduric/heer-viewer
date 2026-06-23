@@ -280,7 +280,8 @@ export default function ViewerPage() {
     const sData =
       (parsedExecution.sections?.[sKey as SectionKey] as Record<string, string>) ?? {};
     const all = Object.entries(sData).flatMap(([label, val]) => {
-      // Prefer all-occurrences list; fall back to single coord; warn if neither
+      // Prefer all-occurrences list; fall back to single coord; warn if neither.
+      // Only ever draw one value overlay per label — use the first (primary) position.
       const positions: LabelCoord[] =
         sAllCoords[label]?.length > 0
           ? sAllCoords[label]
@@ -289,15 +290,10 @@ export default function ViewerPage() {
           : [];
       if (positions.length === 0) {
         console.warn(`[Viewer] Label ${label} not detected for section ${sKey} — no overlay will be shown`);
+        return [];
       }
-      return positions.map((pos) => ({
-        label,
-        value: val,
-        x: pos.x,
-        y: pos.y,
-        rotation: pos.rotation,
-        textWidth: pos.textWidth,
-      }));
+      const pos = positions[0];
+      return [{ label, value: val, x: pos.x, y: pos.y, rotation: pos.rotation, textWidth: pos.textWidth }];
     });
     return highlightedLabel ? all.filter((o) => o.label === highlightedLabel) : all;
   }, [step, stepDefs, coords, parsedExecution, highlightedLabel]);
@@ -465,7 +461,7 @@ export default function ViewerPage() {
                 <thead>
                   <tr className="bg-[#F7F8F3]">
                     <th className="text-left px-3 py-2 text-xs font-medium text-[#718096]">Label</th>
-                    <th className="text-right px-3 py-2 text-xs font-medium text-[#718096]">Maß</th>
+                    <th className="text-right px-3 py-2 text-xs font-medium text-[#718096]">Mass</th>
                   </tr>
                 </thead>
                 <tbody>
