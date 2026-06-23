@@ -174,14 +174,11 @@ export function PdfViewer({
         overlayContext.clearRect(0, 0, pdfCanvas.width, pdfCanvas.height);
         overlayContext.textBaseline = "middle";
 
-        const FONT_LARGE = 18; // non-clustered labels
-        const FONT_SMALL = 13; // labels with a neighbour within CLUSTER_RADIUS PDF pts
-        // Labels closer than this (in PDF points) share the smaller font to reduce overlap.
-        const CLUSTER_RADIUS = 60;
-        const PAD = 3;   // padding inside the value's background highlight
-        // Visual gap (canvas px) between the Lx glyph edge and the value text.
-        const GAP = 5;
-        // Fallback label width (canvas px) when textWidth is absent (old DB entries).
+        // Single uniform font size for all value overlays — no size variation.
+        const FONT = 14;
+        const PAD = 3;
+        const HALF_H = Math.ceil(FONT / 2) + PAD;
+        const GAP = 6;
         const LABEL_W_FALLBACK = 16;
 
         // ── Pre-compute canvas positions for all valid overlays ──────────────
@@ -194,48 +191,14 @@ export function PdfViewer({
             return { overlay, rawCx, rawCy };
           });
 
-        // Assign per-item font size: a label gets FONT_SMALL when any other overlay
-        // anchor is within CLUSTER_RADIUS PDF points (tight groups like L2/L3/L4,
-        // L7/L9, L11/L12/L13). Comparison is in PDF point space, independent of zoom.
-        const fontSizes = items.map((item, i) =>
-          items.some((other, j) => {
-            if (j === i) return false;
-            const dx = item.overlay.x - other.overlay.x;
-            const dy = item.overlay.y - other.overlay.y;
-            return Math.sqrt(dx * dx + dy * dy) < CLUSTER_RADIUS;
-          })
-            ? FONT_SMALL
-            : FONT_LARGE
-        );
-
-        // ── Draw value labels: below first, with fallback positions ──────────
-        // The original Lx text in the PDF is left completely untouched.
-        // Anchor point (rawCx, rawCy): baseline-left for rotation=0;
-        // bottom-of-visible-glyph for rotation=90.
-        //
-        // Four candidate positions are tried in priority order (all clamped to
-        // canvas bounds before testing):
-        //   1. Below  — centered horizontally under the label  [preferred]
-        //   2. Right  — after the right/bottom end of the label
-        //   3. Above  — centered horizontally above the label
-        //   4. Left   — to the left of the label
-        //
-        // The first collision-free candidate is used. If ALL candidates collide
-        // (e.g. a dense cluster), candidate 1 is drawn anyway — a value MUST
-        // always be visible; it must never be silently omitted.
-
         // Pre-register each label glyph's bounding box so value candidates
         // won't overlap the Lx text that's already printed in the PDF.
         const drawnBoxes: { x: number; y: number; w: number; h: number }[] =
-          items.map(({ overlay, rawCx, rawCy }, i) => {
-            const FONT = fontSizes[i];
-            const HALF_H = Math.ceil(FONT / 2) + PAD;
+          items.map(({ overlay, rawCx, rawCy }) => {
             const labelWidthPx =
               overlay.textWidth != null ? overlay.textWidth * renderZoom : LABEL_W_FALLBACK;
             const isRotated = !!overlay.rotation;
             if (isRotated) {
-              // Rotated 90°: label is a vertical stroke.
-              // rawCx ≈ horizontal centre, rawCy ≈ bottom of the glyph.
               return {
                 x: rawCx - HALF_H,
                 y: rawCy - labelWidthPx,
@@ -243,7 +206,6 @@ export function PdfViewer({
                 h: labelWidthPx + PAD,
               };
             } else {
-              // Normal: label extends rightward from rawCx, centred at rawCy.
               return {
                 x: rawCx - PAD,
                 y: rawCy - HALF_H,
@@ -253,66 +215,73 @@ export function PdfViewer({
             }
           });
 
-        function hasCollision(box: { x: number; y: number; w: number; h: number }): boolean {
+        // Returns total overlap area of a candidate box against all registered boxes.
+        // 0 means collision-free.
+        function overlapArea(box: { x: number; y: number; w: number; h: number }): number {
+          let total = 0;
           for (const b of drawnBoxes) {
-            const overlapX = Math.min(b.x + b.w, box.x + box.w) - Math.max(b.x, box.x);
-            const overlapY = Math.min(b.y + b.h, box.y + box.h) - Math.max(b.y, box.y);
-            if (overlapX > 0 && overlapY > 0) return true;
+            const ox = Math.min(b.x + b.w, box.x + box.w) - Math.max(b.x, box.x);
+            const oy = Math.min(b.y + b.h, box.y + box.h) - Math.max(b.y, box.y);
+            if (ox > 0 && oy > 0) total += ox * oy;
           }
-          return false;
+          return total;
         }
+
+        // Set font once — it is now uniform for all overlays.
+        overlayContext.font = `bold ${FONT}px Inter, sans-serif`;
 
         for (let i = 0; i < items.length; i++) {
           const { overlay, rawCx, rawCy } = items[i];
-          const FONT = fontSizes[i];
-          const HALF_H = Math.ceil(FONT / 2) + PAD;
-          overlayContext.font = `bold ${FONT}px Inter, sans-serif`;
 
           const text = overlay.value;
           const tw = overlayContext.measureText(text).width;
           const isRotated = !!overlay.rotation;
 
           // labelWidthPx: advance width of the Lx glyph in canvas px.
-          // overlay.textWidth is in PDF pts; multiply by renderZoom to convert.
           const labelWidthPx =
             overlay.textWidth != null ? overlay.textWidth * renderZoom : LABEL_W_FALLBACK;
 
-          // Horizontal centre of the Lx glyph in canvas px.
-          // rotation=90: label is a narrow vertical stroke — centre ≈ rawCx.
-          // rotation=0:  label extends rightward — centre = rawCx + labelWidthPx/2.
+          // Horizontal centre of the Lx glyph.
           const labelCenterX = isRotated ? rawCx : rawCx + labelWidthPx / 2;
 
-          // Candidate positions (raw, before clamping).
-          const rawCandidates: Array<{ vx: number; vy: number }> = [
-            // 1. Below — centered under label
-            { vx: labelCenterX - tw / 2,      vy: rawCy + GAP + HALF_H },
-            // 2. Right of label end
-            { vx: rawCx + labelWidthPx + GAP,  vy: rawCy },
-            // 3. Above — centered over label
-            { vx: labelCenterX - tw / 2,      vy: rawCy - GAP - HALF_H },
-            // 4. Left of label
-            { vx: rawCx - tw - GAP,            vy: rawCy },
-          ];
+          // Generate 24 candidates: 8 directions × 3 progressively larger distances.
+          // Direction order (preference): below, right, above, left, then diagonals.
+          const rawCandidates: Array<{ vx: number; vy: number }> = [];
+          for (const dist of [1.0, 1.8, 3.2]) {
+            const dV = (GAP + HALF_H) * dist;
+            const dH = GAP * dist;
+            rawCandidates.push(
+              { vx: labelCenterX - tw / 2,           vy: rawCy + dV },               // below
+              { vx: rawCx + labelWidthPx + dH,       vy: rawCy },                    // right
+              { vx: labelCenterX - tw / 2,           vy: rawCy - dV },               // above
+              { vx: rawCx - tw - dH,                 vy: rawCy },                    // left
+              { vx: labelCenterX + dH,               vy: rawCy + dV },               // bottom-right
+              { vx: labelCenterX - tw - dH,          vy: rawCy + dV },               // bottom-left
+              { vx: labelCenterX + dH,               vy: rawCy - dV },               // top-right
+              { vx: labelCenterX - tw - dH,          vy: rawCy - dV },               // top-left
+            );
+          }
 
           // Clamp every candidate to canvas bounds.
-          const clampedCandidates = rawCandidates.map(({ vx, vy }) => ({
+          const candidates = rawCandidates.map(({ vx, vy }) => ({
             vx: Math.max(PAD, Math.min(vx, pdfCanvas.width - tw - PAD)),
             vy: Math.max(HALF_H, Math.min(vy, pdfCanvas.height - HALF_H)),
           }));
 
-          // Pick first collision-free candidate; fall back to #1 if all collide.
-          let chosen = clampedCandidates[0];
-          for (const c of clampedCandidates) {
-            const testBox = { x: c.vx - PAD, y: c.vy - HALF_H, w: tw + PAD * 2, h: FONT + PAD * 2 };
-            if (!hasCollision(testBox)) {
-              chosen = c;
-              break;
-            }
+          // Pick first collision-free candidate; if all collide, pick the one
+          // with the smallest total overlap area so we always show something readable.
+          let chosen = candidates[0];
+          let bestOverlap = Infinity;
+          for (const c of candidates) {
+            const box = { x: c.vx - PAD, y: c.vy - HALF_H, w: tw + PAD * 2, h: FONT + PAD * 2 };
+            const area = overlapArea(box);
+            if (area === 0) { chosen = c; break; }
+            if (area < bestOverlap) { bestOverlap = area; chosen = c; }
           }
 
           const { vx, vy } = chosen;
           const box = { x: vx - PAD, y: vy - HALF_H, w: tw + PAD * 2, h: FONT + PAD * 2 };
-          drawnBoxes.push(box); // register so later labels avoid this spot
+          drawnBoxes.push(box);
 
           overlayContext.fillStyle = "rgba(230,235,240,0.88)";
           overlayContext.fillRect(box.x, box.y, box.w, box.h);
