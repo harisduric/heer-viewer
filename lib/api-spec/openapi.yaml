@@ -127,6 +127,37 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /schema/{name}/redetect:
+    post:
+      operationId: redetectSchemaLabels
+      tags: [schema]
+      summary: Re-detect label positions from a schema PDF
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Detection result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedetectResult"
+        "404":
+          description: Schema slot or PDF not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Detection failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /schema/{name}/upload:
     post:
       operationId: uploadSchema
@@ -303,3 +334,27 @@ components:
     CoordinatesInput:
       type: object
       additionalProperties: true
+
+    RedetectResult:
+      type: object
+      required: [name, count, summary]
+      properties:
+        name:
+          type: string
+        count:
+          type: integer
+        summary:
+          type: string
+        rotationLog:
+          type: string
+        detail:
+          type: string
+        page2:
+          type: object
+          additionalProperties: true
+        page2_all:
+          type: object
+          additionalProperties: true
+        coordinates:
+          type: object
+          additionalProperties: true

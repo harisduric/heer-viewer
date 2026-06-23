@@ -4,9 +4,10 @@ import { Layout } from "../components/layout";
 import {
   useGetSchemaLibrary,
   getGetSchemaLibraryQueryKey,
+  useRedetectSchemaLabels,
 } from "@workspace/api-client-react";
 import type { SchemaSlot } from "@workspace/api-client-react";
-import { Loader2, UploadCloud, Pencil, Check, X } from "lucide-react";
+import { Loader2, UploadCloud, Pencil, Check, X, RefreshCw } from "lucide-react";
 import * as pdfjsLib from "pdfjs-dist";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -29,6 +30,23 @@ function SchemaCard({ slot }: { slot: SchemaSlot }) {
   const [renameError, setRenameError] = useState<string | null>(null);
   const [renaming, setRenaming] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const redetectMutation = useRedetectSchemaLabels();
+
+  const handleRedetect = useCallback(async () => {
+    setMessages([]);
+    try {
+      const result = await redetectMutation.mutateAsync({ name: slot.name });
+      setMessages([
+        {
+          text: `Labels erkannt: ${result.count} (${result.summary})`,
+          kind: "info",
+        },
+      ]);
+    } catch (_err) {
+      setMessages([{ text: "Fehler beim Erkennen der Labels", kind: "success" }]);
+    }
+  }, [slot.name, redetectMutation]);
 
   useEffect(() => {
     if (slot.status !== "loaded" || !slot.object_path) return;
@@ -281,6 +299,21 @@ function SchemaCard({ slot }: { slot: SchemaSlot }) {
                 <Pencil className="w-3 h-3 shrink-0" />
                 Umbenennen
               </button>
+              {slot.status === "loaded" && (
+                <button
+                  disabled={redetectMutation.isPending}
+                  onClick={handleRedetect}
+                  className="flex items-center gap-1 text-[10px] text-[#718096] border border-[#E2E8F0] rounded px-1.5 py-0.5 hover:border-[#CBD5E0] hover:text-[#4A5568] hover:bg-[#F7FAFC] transition-colors disabled:opacity-40"
+                  title="Label-Koordinaten neu erkennen"
+                >
+                  {redetectMutation.isPending ? (
+                    <Loader2 className="w-3 h-3 shrink-0 animate-spin" />
+                  ) : (
+                    <RefreshCw className="w-3 h-3 shrink-0" />
+                  )}
+                  Labels neu erkennen
+                </button>
+              )}
             </div>
           </>
         )}

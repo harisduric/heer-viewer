@@ -71,6 +71,25 @@ export const GetSchemaPageCountResponse = zod.object({
 
 
 /**
+ * @summary Re-detect label positions from a schema PDF
+ */
+export const RedetectSchemaLabelsParams = zod.object({
+  "name": zod.coerce.string()
+})
+
+export const RedetectSchemaLabelsResponse = zod.object({
+  "name": zod.string(),
+  "count": zod.number(),
+  "summary": zod.string(),
+  "rotationLog": zod.string().optional(),
+  "detail": zod.string().optional(),
+  "page2": zod.record(zod.string(), zod.unknown()).optional(),
+  "page2_all": zod.record(zod.string(), zod.unknown()).optional(),
+  "coordinates": zod.record(zod.string(), zod.unknown()).optional()
+})
+
+
+/**
  * @summary Upload a schema drawing PDF to a slot
  */
 export const UploadSchemaParams = zod.object({

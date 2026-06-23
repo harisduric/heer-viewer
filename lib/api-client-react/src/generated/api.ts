@@ -27,6 +27,7 @@ import type {
   HealthStatus,
   PageCount,
   ParsedExecution,
+  RedetectResult,
   SchemaSlot,
   SchemaUpload
 } from './api.schemas';
@@ -429,6 +430,76 @@ export function useGetSchemaPageCount<TData = Awaited<ReturnType<typeof getSchem
 
 
 
+
+export const getRedetectSchemaLabelsUrl = (name: string,) => {
+
+
+
+
+  return `/api/schema/${name}/redetect`
+}
+
+/**
+ * @summary Re-detect label positions from a schema PDF
+ */
+export const redetectSchemaLabels = async (name: string, options?: RequestInit): Promise<RedetectResult> => {
+
+  return customFetch<RedetectResult>(getRedetectSchemaLabelsUrl(name),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getRedetectSchemaLabelsMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof redetectSchemaLabels>>, TError,{name: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof redetectSchemaLabels>>, TError,{name: string}, TContext> => {
+
+const mutationKey = ['redetectSchemaLabels'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof redetectSchemaLabels>>, {name: string}> = (props) => {
+          const {name} = props ?? {};
+
+          return  redetectSchemaLabels(name,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RedetectSchemaLabelsMutationResult = NonNullable<Awaited<ReturnType<typeof redetectSchemaLabels>>>
+
+    export type RedetectSchemaLabelsMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Re-detect label positions from a schema PDF
+ */
+export const useRedetectSchemaLabels = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof redetectSchemaLabels>>, TError,{name: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof redetectSchemaLabels>>,
+        TError,
+        {name: string},
+        TContext
+      > => {
+      return useMutation(getRedetectSchemaLabelsMutationOptions(options));
+    }
 
 export const getUploadSchemaUrl = (name: string,) => {
 

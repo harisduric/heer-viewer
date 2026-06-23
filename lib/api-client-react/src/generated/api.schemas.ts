@@ -63,3 +63,20 @@ export interface CoordinatesData { [key: string]: unknown }
 
 export interface CoordinatesInput { [key: string]: unknown }
 
+export type RedetectResultPage2 = { [key: string]: unknown };
+
+export type RedetectResultPage2All = { [key: string]: unknown };
+
+export type RedetectResultCoordinates = { [key: string]: unknown };
+
+export interface RedetectResult {
+  name: string;
+  count: number;
+  summary: string;
+  rotationLog?: string;
+  detail?: string;
+  page2?: RedetectResultPage2;
+  page2_all?: RedetectResultPage2All;
+  coordinates?: RedetectResultCoordinates;
+}
+
