@@ -9,10 +9,11 @@ export default function UnlockPage() {
   const [pin, setPin] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [rateLimited, setRateLimited] = useState(false);
 
   const handleUnlock = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!pin) return;
+    if (!pin || rateLimited) return;
     setLoading(true);
     setError(null);
     try {
@@ -28,7 +29,12 @@ export default function UnlockPage() {
         navigate(redirect);
       } else {
         const body = (await res.json()) as { error?: string };
-        setError(body.error ?? "Fehler beim Entsperren");
+        if (res.status === 429) {
+          setRateLimited(true);
+          setError(body.error ?? "Zu viele Versuche. Bitte 15 Minuten warten.");
+        } else {
+          setError(body.error ?? "Fehler beim Entsperren");
+        }
       }
     } catch {
       setError("Netzwerkfehler. Bitte erneut versuchen.");
@@ -66,7 +72,7 @@ export default function UnlockPage() {
               className="text-center text-base tracking-widest"
               autoFocus
               autoComplete="off"
-              disabled={loading}
+              disabled={loading || rateLimited}
             />
             {error && (
               <div className="flex items-center gap-1.5 text-red-600 text-sm">
@@ -78,7 +84,7 @@ export default function UnlockPage() {
 
           <Button
             type="submit"
-            disabled={loading || !pin.trim()}
+            disabled={loading || !pin.trim() || rateLimited}
             className="w-full bg-[#B8CC5A] hover:bg-[#a3b84a] text-[#2D3748] font-semibold"
           >
             {loading && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
