@@ -1,5 +1,6 @@
 import { useRef, useState, useCallback, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
 import { Layout } from "../components/layout";
 import {
   useGetSchemaLibrary,
@@ -7,7 +8,7 @@ import {
   useRedetectSchemaLabels,
 } from "@workspace/api-client-react";
 import type { SchemaSlot } from "@workspace/api-client-react";
-import { Loader2, UploadCloud, Pencil, Check, X, RefreshCw } from "lucide-react";
+import { Loader2, UploadCloud, Pencil, Check, X, RefreshCw, RefreshCcw } from "lucide-react";
 import * as pdfjsLib from "pdfjs-dist";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -349,21 +350,88 @@ function SchemaCard({ slot }: { slot: SchemaSlot }) {
   );
 }
 
+type BulkProgress = { done: number; total: number; failed: number } | null;
+
 export default function BibliothekPage() {
   const { data: library = [], isLoading } = useGetSchemaLibrary();
+  const redetectMutation = useRedetectSchemaLabels();
+  const { toast } = useToast();
+
+  const [bulkRunning, setBulkRunning] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState<BulkProgress>(null);
+
+  const handleRedetectAll = useCallback(async () => {
+    const loaded = library.filter((s) => s.status === "loaded");
+    if (loaded.length === 0) return;
+
+    setBulkRunning(true);
+    setBulkProgress({ done: 0, total: loaded.length, failed: 0 });
+
+    let succeeded = 0;
+    let failed = 0;
+
+    for (const slot of loaded) {
+      try {
+        await redetectMutation.mutateAsync({ name: slot.name });
+        succeeded++;
+      } catch {
+        failed++;
+      }
+      setBulkProgress({ done: succeeded + failed, total: loaded.length, failed });
+    }
+
+    setBulkRunning(false);
+    setBulkProgress(null);
+
+    toast({
+      title: failed === 0 ? "Label-Erkennung abgeschlossen" : "Label-Erkennung mit Fehlern abgeschlossen",
+      description: failed === 0
+        ? `${succeeded} Schema${succeeded !== 1 ? "ta" : ""} erfolgreich verarbeitet.`
+        : `${succeeded} erfolgreich, ${failed} fehlgeschlagen.`,
+      variant: failed === 0 ? "default" : "destructive",
+    });
+  }, [library, redetectMutation, toast]);
+
+  const loadedCount = library.filter((s) => s.status === "loaded").length;
 
   return (
     <Layout>
       <div className="max-w-6xl mx-auto">
-        <div className="mb-6 flex items-center justify-between">
+        <div className="mb-6 flex items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-[#2D3748] tracking-tight">
               Schemabibliothek
             </h1>
             <p className="text-sm text-[#718096] mt-1">
-              {library.filter((s) => s.status === "loaded").length} von 17
-              Schemazeichnungen geladen
+              {loadedCount} von 17 Schemazeichnungen geladen
             </p>
+          </div>
+
+          <div className="flex flex-col items-end gap-1.5 shrink-0">
+            <button
+              disabled={bulkRunning || loadedCount === 0}
+              onClick={handleRedetectAll}
+              className="flex items-center gap-2 text-sm font-medium px-3 py-1.5 rounded-lg border border-[#CBD5E0] text-[#4A5568] bg-white hover:border-[#B8CC5A] hover:text-[#2D3748] hover:bg-[#F7F8F3] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Label-Erkennung für alle geladenen Schemata neu ausführen"
+            >
+              {bulkRunning ? (
+                <Loader2 className="w-4 h-4 shrink-0 animate-spin" />
+              ) : (
+                <RefreshCcw className="w-4 h-4 shrink-0" />
+              )}
+              Alle neu erkennen
+            </button>
+
+            {bulkRunning && bulkProgress && (
+              <p className="text-xs text-[#718096]">
+                {bulkProgress.done} / {bulkProgress.total} abgeschlossen
+                {bulkProgress.failed > 0 && (
+                  <span className="text-[#E53E3E] ml-1">
+                    ({bulkProgress.failed} Fehler)
+                  </span>
+                )}
+              </p>
+            )}
           </div>
         </div>
 
