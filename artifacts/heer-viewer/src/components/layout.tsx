@@ -66,21 +66,17 @@ export function Layout({ children }: { children: ReactNode }) {
 
       {/* Bottom Bar */}
       <footer className="h-[64px] w-full bg-white fixed bottom-0 left-0 flex items-center justify-center z-30 border-t border-[#E2E8F0]">
-        <div className="flex items-center gap-2">
+        <a
+          href="https://migra.tech"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-2 px-4 py-1.5 rounded-full border border-[#7B2FFF]/20 bg-[#7B2FFF]/[0.06] hover:bg-[#7B2FFF]/[0.13] hover:border-[#7B2FFF]/35 transition-all duration-150"
+        >
           <img src="/images/migra-logo.png" alt="Migra" style={{ height: "22px", width: "auto" }} />
           <span className="text-[12px] font-semibold" style={{ color: "#7B2FFF" }}>
-            Built by{" "}
-            <a
-              href="https://migra.tech"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hover:opacity-75 transition-opacity"
-              style={{ color: "#7B2FFF" }}
-            >
-              Migra
-            </a>
+            Built by Migra
           </span>
-        </div>
+        </a>
       </footer>
     </div>
   );
