@@ -658,7 +658,13 @@ export default function ViewerPage() {
                                 </tr>
                               </thead>
                               <tbody>
-                                {Object.entries(dims).map(([label, value]) => (
+                                {Object.entries(dims)
+                                  .sort(([a], [b]) => {
+                                    const na = parseInt(a.replace(/\D/g, ""), 10);
+                                    const nb = parseInt(b.replace(/\D/g, ""), 10);
+                                    return (isNaN(na) || isNaN(nb)) ? a.localeCompare(b) : na - nb;
+                                  })
+                                  .map(([label, value]) => (
                                   <tr key={label}>
                                     <td>{label}</td>
                                     <td>{value}</td>
