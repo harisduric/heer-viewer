@@ -115,7 +115,7 @@ export function parseExecutionDescription(pdfText: string): ParsedExecution {
       (["BO", "SE", "KS", "DE"] as const).includes(
         section as "BO" | "SE" | "KS" | "DE"
       ) &&
-      /^L\d{2}$/.test(code)
+      /^L\d{1,2}$/.test(code)
     ) {
       const label = `L${parseInt(code.replace("L", ""), 10)}`;
       result.sections[section as keyof typeof result.sections][label] =

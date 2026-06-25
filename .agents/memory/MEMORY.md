@@ -8,3 +8,6 @@
 - [pdfjs buffer transfer](pdfjs-buffer-transfer.md) — getDocument({data: uint8Array}) neuters the buffer via worker postMessage; always pass .slice() to preserve React state.
 - [Render IIFE cancelled checks](render-iife-cancelled.md) — canvas.width resets the canvas; check cancelled before it or stale IIFEs overwrite correct renders.
 - [Detection ph must always be 842](detect-ph-fix.md) — Never use vp.height in detectLabels pagerender hook; always ph=DETECT_PAGE_H. After any detectLabels change, redetect all schemas via /redetect.
+- [Detection section assignment: nearest-crop beats Voronoi](detect-nearest-crop.md) — assignSection uses nearest crop boundary (distSqToCropRect) as priority-2 fallback; Voronoi to hardcoded centres is only priority-3 when no crops exist.
+- [Detection label key must be normalised](detect-label-normalise.md) — Store `L${parseInt(str.slice(1),10)}` not raw item.str; "L09" stored raw creates a duplicate key alongside "L9" that the viewer can never match.
+- [redetect-all script bypasses HTTP auth](redetect-all-direct.md) — scripts/src/redetect-all.ts now imports detectLabelsFromPdf+streamSchemaPdf directly (relative path); avoids ACCESS_PIN session-cookie auth that blocks curl/fetch calls.

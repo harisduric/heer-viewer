@@ -97,6 +97,19 @@ function dist2(ax: number, ay: number, bx: number, by: number): number {
 }
 
 /**
+ * Squared Euclidean distance from point (px, py) to the nearest point on a
+ * rectangle [xMin, xMax] × [yMin, yMax].  Returns 0 when the point is inside.
+ */
+function distSqToCropRect(
+  px: number, py: number,
+  xMin: number, xMax: number, yMin: number, yMax: number,
+): number {
+  const dx = Math.max(xMin - px, 0, px - xMax);
+  const dy = Math.max(yMin - py, 0, py - yMax);
+  return dx * dx + dy * dy;
+}
+
+/**
  * Assign a label position to a section.
  *
  * Priority 1 — crop containment (most reliable for non-overlapping sections):
@@ -105,7 +118,15 @@ function dist2(ax: number, ay: number, bx: number, by: number): number {
  *   To compare them we shift crop Y by yOffset = DETECT_PAGE_H − actualPageH.
  *   actualPageH is estimated from the highest crop bottom edge + a small margin.
  *
- * Priority 2 — Voronoi distance to fallback section centres (detection space).
+ * Priority 2 — nearest crop boundary (when label misses all crops):
+ *   Assign to the section whose crop rectangle is geometrically closest to the
+ *   label.  This is far more reliable than Voronoi distance to hardcoded fallback
+ *   centres because it correctly handles labels that sit just outside their crop
+ *   (e.g. a dimension line that extends 2–3 pt past the crop boundary) and labels
+ *   whose section crops have moved since the fallback centres were tuned.
+ *
+ * Priority 3 — Voronoi distance to fallback section centres:
+ *   Used only when no crop data is configured at all (legacy schemas).
  */
 function assignSection(
   x: number,
@@ -117,29 +138,39 @@ function assignSection(
   // pdfjs-space Y coordinates to detection-space Y (842-flip space).
   const cropEntries = SECTIONS.flatMap((sec) => {
     const c = cropMap[sec];
-    return c ? [c] : [];
+    return c ? [[sec, c] as [SectionKey, CropRegion]] : [];
   });
 
   if (cropEntries.length > 0) {
-    const maxCropBottom = Math.max(...cropEntries.map((c) => c.cropY + c.cropH));
+    const maxCropBottom = Math.max(...cropEntries.map(([, c]) => c.cropY + c.cropH));
     // Add a small margin (20pt) to get the estimated actual page height.
     // For A4 landscape (height=595pt), crops bottom out at ~575pt → margin≈20pt.
     const actualPageH = maxCropBottom + 20;
     const yOffset = DETECT_PAGE_H - actualPageH; // e.g. 842 - 595 = 247
 
-    for (const sec of SECTIONS) {
-      const c = cropMap[sec];
-      if (!c) continue;
-      // Convert pdfjs crop boundaries to detection coordinate space
+    // Priority 1: strict crop containment
+    for (const [sec, c] of cropEntries) {
       const detCropYMin = c.cropY + yOffset;
       const detCropYMax = c.cropY + c.cropH + yOffset;
       if (x >= c.cropX && x <= c.cropX + c.cropW && y >= detCropYMin && y <= detCropYMax) {
         return sec;
       }
     }
+
+    // Priority 2: nearest crop boundary — handles labels just outside their crop
+    // (dimension lines that extend past the crop edge, slight misalignments, etc.)
+    let nearestSec: SectionKey = cropEntries[0][0];
+    let nearestDSq = Infinity;
+    for (const [sec, c] of cropEntries) {
+      const detCropYMin = c.cropY + yOffset;
+      const detCropYMax = c.cropY + c.cropH + yOffset;
+      const dSq = distSqToCropRect(x, y, c.cropX, c.cropX + c.cropW, detCropYMin, detCropYMax);
+      if (dSq < nearestDSq) { nearestDSq = dSq; nearestSec = sec; }
+    }
+    return nearestSec;
   }
 
-  // Fall back to nearest section centre by Euclidean distance
+  // Priority 3 (no crops configured): Voronoi distance to fallback centres
   let nearest: SectionKey = "SE";
   let nearestD = Infinity;
   for (const sec of SECTIONS) {
@@ -289,16 +320,20 @@ export async function detectLabelsFromPdf(
       ...(item.textWidth > 0 ? { textWidth: Math.round(item.textWidth * 100) / 100 } : {}),
     };
 
+    // Normalize label key: "L09" → "L9", "L1" → "L1" (strip leading zeros).
+    // The execution PDF parser does the same via parseInt, so keys always match.
+    const normalizedLabel = `L${parseInt(item.str.slice(1), 10)}`;
+
     // Primary coord: first occurrence only (backward compat with koordinaten editor)
-    if (!page2[sec][item.str]) {
-      page2[sec][item.str] = coord;
+    if (!page2[sec][normalizedLabel]) {
+      page2[sec][normalizedLabel] = coord;
     }
 
     // All occurrences (for duplicate coverage in overlay)
-    if (!page2_all[sec][item.str]) {
-      page2_all[sec][item.str] = [];
+    if (!page2_all[sec][normalizedLabel]) {
+      page2_all[sec][normalizedLabel] = [];
     }
-    page2_all[sec][item.str].push(coord);
+    page2_all[sec][normalizedLabel].push(coord);
   }
 
   // ── Build summary ──────────────────────────────────────────────────────────
